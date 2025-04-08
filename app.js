@@ -880,6 +880,89 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize lightbox
     createLightbox();
 
+    // Add event listeners for download buttons
+    if (downloadTextButton) {
+        downloadTextButton.addEventListener('click', () => {
+            downloadAsText();
+        });
+    }
+    
+    if (downloadPdfButton) {
+        downloadPdfButton.addEventListener('click', () => {
+            downloadAsPdf();
+        });
+    }
+
+    // Function to download processed text as a text file
+    function downloadAsText() {
+        if (!processedText) {
+            alert('No processed text available. Please process a chat file first.');
+            return;
+        }
+        
+        const blob = new Blob([processedText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'whatsapp_chat_export.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    
+    // Function to download chat as PDF
+    function downloadAsPdf() {
+        const whatsappContainer = document.getElementById('whatsappContainer');
+        
+        if (!whatsappContainer) {
+            alert('No WhatsApp view available. Please process a chat file first.');
+            return;
+        }
+        
+        // Show loading status
+        updateProgress(50, 'Generating PDF...');
+        if (progressSection) {
+            progressSection.style.display = 'block';
+        }
+        
+        // Clone the container to avoid modifying the visible one
+        const clone = whatsappContainer.cloneNode(true);
+        
+        // Set specific styling for PDF output
+        clone.style.height = 'auto';
+        clone.style.maxHeight = 'none';
+        clone.style.overflow = 'visible';
+        
+        // Generate PDF with configuration options
+        const options = {
+            margin: [10, 10, 10, 10],
+            filename: 'whatsapp_chat_export.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { 
+                scale: 2,
+                useCORS: true,
+                logging: false
+            },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        html2pdf().from(clone).set(options).save()
+            .then(() => {
+                // Hide loading after successful generation
+                if (progressSection) {
+                    progressSection.style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error generating PDF:', error);
+                alert('Error generating PDF. Please try again or use the text export option.');
+                if (progressSection) {
+                    progressSection.style.display = 'none';
+                }
+            });
+    }
+
     // Function to show image in lightbox
     function showMediaInLightbox(mediaUrl, caption, isVideo = false) {
         const lightbox = document.getElementById('whatsapp-lightbox');
