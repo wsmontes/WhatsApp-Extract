@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Chat Extractor & Transcriber</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>WhatsApp Chat Extractor & Transcriber</h1>
+        
+        <div class="api-key-section">
+            <h2>OpenAI API Key</h2>
+            <input type="password" id="apiKeyInput" placeholder="Enter your OpenAI API key for transcription">
+            <div class="api-mode-toggle">
+                <label for="demoModeToggle">Demo Mode (no API charges):</label>
+                <input type="checkbox" id="demoModeToggle" checked>
+            </div>
+            <div class="api-info">
+                <p><strong>Note:</strong> Your API key is required for audio transcription and is only used in your browser. It is never stored or sent to our servers.</p>
+                <p>You can get an API key from <a href="https://platform.openai.com/account/api-keys" target="_blank">OpenAI's website</a>. Transcription costs may apply to your OpenAI account.</p>
+            </div>
+        </div>
+        
+        <div class="upload-section">
+            <h2>Upload WhatsApp Chat Export (ZIP)</h2>
+            <input type="file" id="zipFileInput" accept=".zip">
+            <button id="processButton">Process ZIP File</button>
+        </div>
+        
+        <div class="progress-section" id="progressSection" style="display: none;">
+            <h2>Processing</h2>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <p id="statusText">Preparing...</p>
+            <p id="currentFile"></p>
+        </div>
+        
+        <div class="view-options" id="viewOptions" style="display: none;">
+            <h2>Chat View</h2>
+            <div class="tabs">
+                <button class="tab-btn active" id="whatsappViewBtn">WhatsApp View</button>
+                <button class="tab-btn" id="rawTextBtn">Raw Text</button>
+            </div>
+            <div class="export-buttons">
+                <button id="downloadTextButton">Download as TXT</button>
+                <button id="downloadPdfButton">Download as PDF</button>
+            </div>
+        </div>
+        
+        <div class="result-section" id="whatsappViewSection" style="display: none;">
+            <div class="whatsapp-container" id="whatsappContainer">
+                <div class="chat-header">
+                    <div class="chat-header-info">
+                        <h3 id="chatTitle">Chat</h3>
+                        <p id="participantsInfo"></p>
+                    </div>
+                </div>
+                <div class="messages-container" id="messagesContainer"></div>
+            </div>
+        </div>
+        
+        <div class="result-section" id="rawTextSection" style="display: none;">
+            <h2>Raw Text Output</h2>
+            <div class="result-container" id="resultContainer"></div>
+        </div>
+        
+        <div class="info-section">
+            <h3>Audio Transcription Analysis</h3>
+            <p>This tool analyzes audio transcriptions to identify different speakers using several methods:</p>
+            <ul>
+                <li><strong>Voice Pattern Analysis:</strong> Examines message lengths and patterns to identify potentially different speakers</li>
+                <li><strong>Name Reference Detection:</strong> Looks for phrases like "Tell John..." to detect who the message might be addressed to</li>
+                <li><strong>Color Coding:</strong> Different colors help you identify different voice types</li>
+            </ul>
+            <p><strong>Note:</strong> Voice identification is approximate and based on text analysis only.</p>
+        </div>
+        
+        <div class="info-section">
+            <h3>Supported Formats</h3>
+            <p>This tool works with WhatsApp chat exports including:</p>
+            <ul>
+                <li>Text messages</li>
+                <li>Audio files (.opus, .mp3, etc.)</li>
+                <li>Photos and videos</li>
+                <li>Stickers</li>
+                <li>Documents</li>
+                <li>Links</li>
+            </ul>
+        </div>
+        
+        <div class="info-section">
+            <h3>About Transcription</h3>
+            <p>This tool uses OpenAI's Whisper API to provide accurate transcriptions of audio messages. Features include:</p>
+            <ul>
+                <li>High-quality speech recognition in multiple languages</li>
+                <li>Integration with WhatsApp chat exports</li>
+                <li>Privacy-focused (audio is processed via your API key)</li>
+                <li>Automatic handling of large files (files over 25MB will be compressed)</li>
+            </ul>
+            <p><strong>Note:</strong> OpenAI's API has a 25MB file size limit. Very large audio files will be automatically downsampled, which may affect transcription quality.</p>
+            <p>Each audio file sent for transcription will count toward your OpenAI API usage and may incur charges. Check <a href="https://openai.com/pricing" target="_blank">OpenAI's pricing</a> for details.</p>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
