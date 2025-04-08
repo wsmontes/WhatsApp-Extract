@@ -16,6 +16,11 @@ A web-based tool to extract WhatsApp chat exports, transcribe audio messages usi
 - Transcribes audio messages using OpenAI's Whisper API
 - Automatically handles large audio files (downsampling files > 25MB)
 - Merges transcriptions with the chat text
+- Displays media in an interactive WhatsApp-like interface:
+  - Audio player with playback speed controls (1x, 1.5x, 2x)
+  - Clickable images with lightbox view
+  - Video player with thumbnail preview
+  - Link previews
 - Exports the result as a TXT file or PDF
 
 ## How to Use
@@ -32,7 +37,9 @@ A web-based tool to extract WhatsApp chat exports, transcribe audio messages usi
    - Click "Choose File" and select your WhatsApp chat ZIP
    - Click "Process ZIP File"
    - Wait for processing to complete
-   - Click "Download as TXT" to save the merged chat
+   - Browse through the WhatsApp-style chat view or switch to raw text
+   - Use the audio player speed controls to adjust playback speed
+   - Click "Download as TXT" or "Download as PDF" to save the chat
 
 ## OpenAI API Integration
 

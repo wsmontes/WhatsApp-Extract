@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let chatLines = [];
     let audioFiles = [];
     let transcriptions = {};
+    let mediaFiles = {}; // Store references to extracted media files
 
     // Define the updateProgress function
     function updateProgress(percent, message) {
@@ -45,144 +46,268 @@ document.addEventListener('DOMContentLoaded', () => {
         return arrayBuffer.byteLength <= MAX_SIZE_BYTES;
     }
 
-    // Function to downsample audio to reduce file size
-    async function downsampleAudio(audioData, audioContext) {
+    // Helper function to write strings to DataView - must be defined before it's used
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    // Enhanced function to downsample audio to reduce file size
+    async function downsampleAudio(audioData, audioContext, fileName) {
         try {
-            const originalBuffer = await audioContext.decodeAudioData(audioData);
+            const originalBuffer = await audioContext.decodeAudioData(audioData.slice(0));
+            const originalSize = audioData.byteLength;
+            console.log(`Original audio size: ${(originalSize / (1024 * 1024)).toFixed(2)}MB`);
             
-            // Target sample rate (16000Hz is good for speech)
-            const targetSampleRate = 16000;
+            // Calculate how aggressive we need to be with downsampling based on original size
+            const MAX_SIZE = 25 * 1024 * 1024; // 25MB
+            const sizeRatio = originalSize / MAX_SIZE;
+            const compressionFactor = Math.min(Math.ceil(sizeRatio), 5); // Scale up to 5 for extremely large files
+            console.log(`Size ratio: ${sizeRatio.toFixed(2)}, using compression factor: ${compressionFactor}`);
+            
+            // Check if we need to partition the file
+            const needsPartitioning = sizeRatio > 2.5 || originalBuffer.duration > 600; // Over 2.5x size ratio or 10 minutes
+            
+            // If file needs partitioning, we'll use a different approach
+            if (needsPartitioning) {
+                console.log(`File is very large - will use partitioning approach`);
+                return await partitionAndProcessAudio(originalBuffer, fileName);
+            }
+            
+            // Target sample rate - more aggressive for larger files
+            let targetSampleRate;
+            if (compressionFactor >= 5) {
+                targetSampleRate = 5000; // Extremely aggressive for massive files
+            } else if (compressionFactor >= 4) {
+                targetSampleRate = 6000; // Very aggressive for very large files
+            } else if (compressionFactor >= 3) {
+                targetSampleRate = 8000; // Aggressive for large files
+            } else if (compressionFactor >= 2) {
+                targetSampleRate = 11025; // Moderately aggressive
+            } else {
+                targetSampleRate = 16000; // Standard
+            }
+            
+            console.log(`Target sample rate: ${targetSampleRate}Hz (original: ${originalBuffer.sampleRate}Hz)`);
             
             // Don't upsample, only downsample
             if (originalBuffer.sampleRate <= targetSampleRate) {
-                return await convertAudioToWav(originalBuffer);
+                targetSampleRate = originalBuffer.sampleRate;
             }
+            
+            // Always convert to mono
+            const numChannels = 1;
+            console.log(`Using ${numChannels} channel(s)`);
             
             // Calculate new length based on sample rate change
             const originalLength = originalBuffer.length;
             const targetLength = Math.floor(originalLength * targetSampleRate / originalBuffer.sampleRate);
-            const newBuffer = new AudioContext().createBuffer(1, targetLength, targetSampleRate);
+            const durationSeconds = originalBuffer.duration;
             
-            // Get original audio data and downsample
-            const originalData = originalBuffer.getChannelData(0);
-            const newData = newBuffer.getChannelData(0);
+            console.log(`Original duration: ${Math.round(durationSeconds)}s`);
             
-            // Simple downsampling - can be improved with better algorithms
-            for (let i = 0; i < targetLength; i++) {
-                const originalIndex = Math.floor(i * originalBuffer.sampleRate / targetSampleRate);
-                newData[i] = originalData[originalIndex];
+            // Define max duration based on compression factor
+            const MAX_DURATION_SEC = compressionFactor >= 4 ? 300 : // 5 mins for massive files
+                                   compressionFactor >= 3 ? 600 : // 10 mins for very large files
+                                   compressionFactor >= 2 ? 1200 : // 20 mins for large files
+                                   1800; // 30 mins otherwise
+            
+            // Calculate final length based on max duration
+            let finalLength = targetLength;
+            let truncated = false;
+            
+            if (durationSeconds > MAX_DURATION_SEC) {
+                finalLength = Math.floor(MAX_DURATION_SEC * targetSampleRate);
+                truncated = true;
+                console.log(`Audio too long (${Math.round(durationSeconds)}s), truncating to ${MAX_DURATION_SEC}s`);
             }
             
-            // Convert to WAV
-            return await convertAudioToWav(newBuffer);
+            // Create new buffer with target parameters
+            const newBuffer = new AudioContext().createBuffer(numChannels, finalLength, targetSampleRate);
+            
+            // Mix down to mono and apply downsampling
+            const newChannelData = newBuffer.getChannelData(0);
+            
+            // For mono conversion, average all original channels
+            for (let i = 0; i < finalLength; i++) {
+                const originalIndex = Math.floor(i * originalBuffer.sampleRate / targetSampleRate);
+                if (originalIndex >= originalLength) break;
+                
+                let sum = 0;
+                for (let c = 0; c < originalBuffer.numberOfChannels; c++) {
+                    sum += originalBuffer.getChannelData(c)[originalIndex];
+                }
+                newChannelData[i] = sum / originalBuffer.numberOfChannels;
+            }
+            
+            // Apply amplitude normalization
+            let maxAmplitude = 0;
+            
+            // First pass: find max amplitude
+            for (let i = 0; i < finalLength; i++) {
+                maxAmplitude = Math.max(maxAmplitude, Math.abs(newChannelData[i]));
+            }
+            
+            // Scale factor to normalize to 80% of max amplitude (to prevent clipping)
+            const normalizationFactor = maxAmplitude > 0 ? 0.8 / maxAmplitude : 1;
+            
+            // Second pass: apply normalization
+            for (let i = 0; i < finalLength; i++) {
+                newChannelData[i] *= normalizationFactor;
+            }
+            
+            // For large files, apply dynamic range compression
+            if (compressionFactor >= 2) {
+                const threshold = 0.5;  // Only compress samples above 50% amplitude
+                const ratio = 2 + compressionFactor; // Higher ratio for larger files
+                
+                for (let i = 0; i < finalLength; i++) {
+                    const sample = newChannelData[i];
+                    const absSample = Math.abs(sample);
+                    
+                    if (absSample > threshold) {
+                        // Amount above threshold
+                        const excess = absSample - threshold;
+                        // Compressed excess
+                        const compressedExcess = excess / ratio;
+                        // New absolute value
+                        const newAbsSample = threshold + compressedExcess;
+                        // Keep original sign
+                        newChannelData[i] = sample >= 0 ? newAbsSample : -newAbsSample;
+                    }
+                }
+            }
+            
+            // Convert to WAV (with reduced bit depth for large files)
+            const bitDepth = compressionFactor >= 3 ? 8 : 16; // Use 8-bit for very large files
+            console.log(`Using ${bitDepth}-bit depth for compression`);
+            
+            const wavBlob = await convertAudioToWav(newBuffer, bitDepth);
+            
+            // Log compression results
+            console.log(`Compressed audio size: ${(wavBlob.size / (1024 * 1024)).toFixed(2)}MB`);
+            console.log(`Compression ratio: ${(originalSize / wavBlob.size).toFixed(2)}x`);
+            
+            // If the result is still too large, fall back to emergency compression
+            if (wavBlob.size > MAX_SIZE) {
+                console.warn(`Warning: File is still ${(wavBlob.size / (1024 * 1024)).toFixed(2)}MB after processing. `+
+                            `Trying partitioning approach...`);
+                
+                // Use partitioning as a fallback for files still too large
+                return await partitionAndProcessAudio(originalBuffer, fileName);
+            }
+            
+            return wavBlob;
         } catch (error) {
             console.error('Error downsampling audio:', error);
             throw error;
         }
     }
 
-    // Function to convert AudioBuffer to WAV
-    async function convertAudioToWav(audioBuffer) {
-        // Create WAV file
-        const numOfChannels = 1; // Mono
-        const sampleRate = audioBuffer.sampleRate;
-        const length = audioBuffer.length * numOfChannels * 2 + 44;
+    // New function to partition audio and create manageable chunks
+    async function partitionAndProcessAudio(audioBuffer, fileName) {
+        const MAX_CHUNK_SIZE = 20 * 1024 * 1024; // 20MB target for chunks (leaving headroom)
+        const MAX_CHUNK_DURATION = 360; // 6 minutes per chunk maximum
+        const MIN_CHUNK_DURATION = 120; // 2 minutes minimum per chunk
         
-        const wavBuffer = new ArrayBuffer(length);
-        const view = new DataView(wavBuffer);
-
-        // Write WAV header
-        writeString(view, 0, 'RIFF');
-        view.setUint32(4, 36 + audioBuffer.length * numOfChannels * 2, true);
-        writeString(view, 8, 'WAVE');
-        writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, numOfChannels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * numOfChannels * 2, true);
-        view.setUint16(32, numOfChannels * 2, true);
-        view.setUint16(34, 16, true);
-        writeString(view, 36, 'data');
-        view.setUint32(40, audioBuffer.length * numOfChannels * 2, true);
-
-        // Write PCM samples
-        let offset = 44;
-        const channelData = audioBuffer.getChannelData(0);
-        for (let i = 0; i < audioBuffer.length; i++) {
-            const sample = channelData[i];
-            const intSample = Math.max(-1, Math.min(1, sample));
-            view.setInt16(offset, intSample < 0 ? intSample * 0x8000 : intSample * 0x7FFF, true);
-            offset += 2;
+        console.log(`Starting audio partitioning for ${fileName}`);
+        console.log(`Original duration: ${Math.round(audioBuffer.duration)}s`);
+        
+        // Determine optimal chunk count
+        // Balance between duration-based and size-based chunking
+        let chunkCount = Math.max(
+            Math.ceil(audioBuffer.duration / MAX_CHUNK_DURATION),
+            Math.ceil(audioBuffer.length * audioBuffer.numberOfChannels * 4 / MAX_CHUNK_SIZE)
+        );
+        
+        // Ensure we don't make chunks too small
+        const avgChunkDuration = audioBuffer.duration / chunkCount;
+        if (avgChunkDuration < MIN_CHUNK_DURATION && audioBuffer.duration > MIN_CHUNK_DURATION) {
+            chunkCount = Math.floor(audioBuffer.duration / MIN_CHUNK_DURATION);
         }
-
-        return new Blob([wavBuffer], { type: 'audio/wav' });
-    }
-
-    // Function to convert .opus files to .wav
-    async function convertOpusToWav(audioData, audioContext) {
-        try {
-            const audioBuffer = await audioContext.decodeAudioData(audioData);
-            const offlineContext = new OfflineAudioContext(
-                audioBuffer.numberOfChannels,
-                audioBuffer.length,
-                audioBuffer.sampleRate
+        
+        console.log(`Splitting audio into ${chunkCount} chunks`);
+        
+        // Mark that we're using partitioning approach
+        window.isUsingPartitioning = true;
+        window.totalChunks = chunkCount;
+        window.currentChunk = 0;
+        
+        // Calculate chunk parameters
+        const sampleRate = 16000; // Use consistent sample rate for all chunks
+        const chunkDurationSecs = audioBuffer.duration / chunkCount;
+        const samplesPerChunk = Math.floor(chunkDurationSecs * sampleRate);
+        const originalSamplesPerChunk = Math.floor(chunkDurationSecs * audioBuffer.sampleRate);
+        
+        // Store processed chunks
+        const processedChunks = [];
+        
+        // Process each chunk
+        for (let i = 0; i < chunkCount; i++) {
+            window.currentChunk = i + 1;
+            updateProgress(
+                50 + ((i / chunkCount) * 10),
+                `Processing audio chunk ${i+1}/${chunkCount}...`
             );
-            const source = offlineContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(offlineContext.destination);
-            source.start(0);
-            const renderedBuffer = await offlineContext.startRendering();
-
-            // Convert the rendered buffer to a WAV Blob
-            const wavBlob = audioBufferToWav(renderedBuffer);
-            return wavBlob;
-        } catch (error) {
-            console.error('Error converting .opus to .wav:', error);
-            throw error;
-        }
-    }
-
-    // Helper function to convert AudioBuffer to WAV Blob
-    function audioBufferToWav(buffer) {
-        const numOfChannels = buffer.numberOfChannels;
-        const length = buffer.length * numOfChannels * 2 + 44;
-        const wavBuffer = new ArrayBuffer(length);
-        const view = new DataView(wavBuffer);
-
-        // Write WAV header
-        writeString(view, 0, 'RIFF');
-        view.setUint32(4, 36 + buffer.length * numOfChannels * 2, true);
-        writeString(view, 8, 'WAVE');
-        writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, numOfChannels, true);
-        view.setUint32(24, buffer.sampleRate, true);
-        view.setUint32(28, buffer.sampleRate * numOfChannels * 2, true);
-        view.setUint16(32, numOfChannels * 2, true);
-        view.setUint16(34, 16, true);
-        writeString(view, 36, 'data');
-        view.setUint32(40, buffer.length * numOfChannels * 2, true);
-
-        // Write PCM samples
-        let offset = 44;
-        for (let i = 0; i < buffer.length; i++) {
-            for (let channel = 0; channel < numOfChannels; channel++) {
-                const sample = buffer.getChannelData(channel)[i];
-                const intSample = Math.max(-1, Math.min(1, sample));
-                view.setInt16(offset, intSample < 0 ? intSample * 0x8000 : intSample * 0x7FFF, true);
-                offset += 2;
+            
+            // Create a buffer for this chunk
+            const chunkBuffer = new AudioContext().createBuffer(1, samplesPerChunk, sampleRate);
+            const chunkData = chunkBuffer.getChannelData(0);
+            
+            // Calculate the range in the original buffer
+            const startSample = i * originalSamplesPerChunk;
+            const endSample = Math.min((i + 1) * originalSamplesPerChunk, audioBuffer.length);
+            
+            // Fill the chunk with resampled data
+            for (let j = 0; j < samplesPerChunk; j++) {
+                // Map the position in our chunk to the original buffer with resampling
+                const originalPos = startSample + Math.floor(j * (endSample - startSample) / samplesPerChunk);
+                
+                if (originalPos < audioBuffer.length) {
+                    // Average all channels for mono output
+                    let sum = 0;
+                    for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+                        sum += audioBuffer.getChannelData(c)[originalPos];
+                    }
+                    chunkData[j] = sum / audioBuffer.numberOfChannels;
+                }
             }
+            
+            // Normalize audio levels for this chunk
+            normalizeAudioLevels(chunkData);
+            
+            // Convert to WAV - use 16-bit for better quality
+            const chunkBlob = await convertAudioToWav(chunkBuffer, 16);
+            processedChunks.push(chunkBlob);
+            
+            console.log(`Chunk ${i+1} processed: ${(chunkBlob.size / (1024 * 1024)).toFixed(2)}MB`);
         }
-
-        return new Blob([wavBuffer], { type: 'audio/wav' });
+        
+        // Return information about the chunks rather than a single blob
+        return {
+            isPartitioned: true,
+            chunks: processedChunks,
+            chunkCount: chunkCount,
+            totalDuration: audioBuffer.duration,
+            fileName: fileName
+        };
     }
 
-    // Helper function to write strings to DataView
-    function writeString(view, offset, string) {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
+    // Helper function to normalize audio levels in a buffer
+    function normalizeAudioLevels(bufferData) {
+        // Find maximum amplitude
+        let maxAmplitude = 0;
+        for (let i = 0; i < bufferData.length; i++) {
+            maxAmplitude = Math.max(maxAmplitude, Math.abs(bufferData[i]));
+        }
+        
+        // If we found some non-zero amplitude, normalize to 0.8 (leaving headroom)
+        if (maxAmplitude > 0) {
+            const normalizationFactor = 0.8 / maxAmplitude;
+            for (let i = 0; i < bufferData.length; i++) {
+                bufferData[i] *= normalizationFactor;
+            }
         }
     }
 
@@ -205,70 +330,119 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // First check if file is too large
             if (!isFileSizeWithinLimits(audioData)) {
-                console.log(`File ${fileName} exceeds 25MB limit. Attempting to downsample...`);
-                updateProgress(50, `Large audio file detected. Downsampling ${fileName}...`);
+                console.log(`File ${fileName} exceeds 25MB limit. Attempting to process...`);
+                updateProgress(50, `Large audio file detected. Processing ${fileName}...`);
             }
             
-            let audioBlob;
+            let processedAudio;
             
             try {
                 // Decode and convert audio to an appropriate format
                 if (fileName.endsWith('.opus') || !isFileSizeWithinLimits(audioData)) {
-                    // If file is opus or too large, convert it
-                    const decodedBuffer = await audioContext.decodeAudioData(audioData.slice(0));
+                    console.log(`Processing ${fileName}. Size: ${(audioData.byteLength / (1024 * 1024)).toFixed(2)}MB`);
                     
-                    // Create a mono, downsampled version if needed
-                    let processedBuffer;
-                    if (!isFileSizeWithinLimits(audioData)) {
-                        // Create a lower sample rate version
-                        const offlineCtx = new OfflineAudioContext(
-                            1, // mono
-                            Math.floor(decodedBuffer.duration * 16000), // target sample rate
-                            16000 // target sample rate
-                        );
+                    // Process the audio file
+                    processedAudio = await downsampleAudio(audioData, audioContext, fileName);
+                    
+                    // Check if we have a partitioned result
+                    if (processedAudio && processedAudio.isPartitioned) {
+                        console.log(`Processing partitioned audio with ${processedAudio.chunks.length} chunks`);
                         
-                        const source = offlineCtx.createBufferSource();
-                        source.buffer = decodedBuffer;
-                        source.connect(offlineCtx.destination);
-                        source.start(0);
+                        // Process each chunk and concatenate the transcripts
+                        let fullTranscript = '';
+                        for (let i = 0; i < processedAudio.chunks.length; i++) {
+                            const chunkBlob = processedAudio.chunks[i];
+                            
+                            updateProgress(
+                                60 + ((i / processedAudio.chunks.length) * 30),
+                                `Transcribing chunk ${i+1}/${processedAudio.chunks.length}...`
+                            );
+                            
+                            // Send to OpenAI
+                            const formData = new FormData();
+                            formData.append('file', chunkBlob, `chunk_${i+1}_${fileName.replace('.opus', '.wav')}`);
+                            formData.append('model', 'whisper-1');
+                            
+                            try {
+                                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Authorization': `Bearer ${apiKey}`
+                                    },
+                                    body: formData
+                                });
+                                
+                                if (!response.ok) {
+                                    const errorData = await response.json().catch(() => ({}));
+                                    throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || response.statusText || 'Unknown error'}`);
+                                }
+                                
+                                const data = await response.json();
+                                
+                                // Add chunk transcript to full transcript with proper spacing
+                                if (fullTranscript && data.text) {
+                                    fullTranscript += ' ' + data.text;
+                                } else {
+                                    fullTranscript = data.text;
+                                }
+                                
+                                console.log(`Chunk ${i+1} transcription completed: ${data.text.substring(0, 100)}...`);
+                            } catch (error) {
+                                console.error(`Error transcribing chunk ${i+1}:`, error);
+                                fullTranscript += ` [Error with part ${i+1}: ${error.message}]`;
+                            }
+                        }
                         
-                        processedBuffer = await offlineCtx.startRendering();
-                    } else {
-                        processedBuffer = decodedBuffer;
+                        // Clean up and return the combined transcript
+                        fullTranscript = cleanupTranscript(fullTranscript);
+                        return fullTranscript;
                     }
                     
-                    // Convert to WAV
-                    audioBlob = await convertAudioToWav(processedBuffer);
+                    // For regular (non-partitioned) audio, send to OpenAI as usual
+                    const formData = new FormData();
+                    formData.append('file', processedAudio, fileName.replace('.opus', '.wav'));
+                    formData.append('model', 'whisper-1');
+                    
+                    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || response.statusText || 'Unknown error'}`);
+                    }
+                    
+                    const data = await response.json();
+                    return data.text;
                 } else {
-                    // For other formats, use as is
-                    audioBlob = new Blob([audioData], { type: 'audio/mpeg' });
+                    // For other formats that don't need processing, use as is
+                    const audioBlob = new Blob([audioData], { type: 'audio/mpeg' });
+                    
+                    // Send to OpenAI
+                    const formData = new FormData();
+                    formData.append('file', audioBlob, fileName);
+                    formData.append('model', 'whisper-1');
+                    
+                    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || response.statusText || 'Unknown error'}`);
+                    }
+                    
+                    const data = await response.json();
+                    return data.text;
                 }
-                
-                // Check final size after processing
-                if (audioBlob.size > 25 * 1024 * 1024) {
-                    throw new Error(`File is still too large (${Math.round(audioBlob.size/1024/1024)}MB) after processing. Maximum size is 25MB.`);
-                }
-                
-                // Send to OpenAI
-                const formData = new FormData();
-                formData.append('file', audioBlob, fileName.replace('.opus', '.wav'));
-                formData.append('model', 'whisper-1');
-                
-                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: formData
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || response.statusText || 'Unknown error'}`);
-                }
-                
-                const data = await response.json();
-                return data.text;
             } catch (error) {
                 console.error('Error processing audio:', error);
                 throw error;
@@ -277,6 +451,115 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Transcription error:', error);
             throw error;
         }
+    }
+
+    // Helper function to clean up and improve partitioned transcript
+    function cleanupTranscript(transcript) {
+        if (!transcript) return '';
+        
+        // Remove duplicate words at chunk boundaries
+        // First, split into sentences
+        const sentences = transcript.match(/[^.!?]+[.!?]+/g) || [transcript];
+        
+        // Filter out duplicate sentences
+        const uniqueSentences = [];
+        const seenSentences = new Set();
+        
+        for (const sentence of sentences) {
+            const trimmed = sentence.trim();
+            // Use a simplified version for comparison (lowercase, remove extra spaces)
+            const simplified = trimmed.toLowerCase().replace(/\s+/g, ' ');
+            
+            if (!seenSentences.has(simplified) && simplified.length > 5) {
+                seenSentences.add(simplified);
+                uniqueSentences.push(trimmed);
+            }
+        }
+        
+        // Recombine with proper spacing
+        return uniqueSentences.join(' ');
+    }
+
+    // Function to convert AudioBuffer to WAV with variable bit depth
+    async function convertAudioToWav(audioBuffer, bitDepth = 16) {
+        // Create WAV file
+        const numOfChannels = audioBuffer.numberOfChannels;
+        const sampleRate = audioBuffer.sampleRate;
+        
+        // Calculate bytes per sample based on bit depth
+        const bytesPerSample = bitDepth === 8 ? 1 : 2;
+        
+        const length = audioBuffer.length * numOfChannels * bytesPerSample + 44;
+        const wavBuffer = new ArrayBuffer(length);
+        const view = new DataView(wavBuffer);
+
+        // Write WAV header
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + audioBuffer.length * numOfChannels * bytesPerSample, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM format
+        view.setUint16(22, numOfChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * numOfChannels * bytesPerSample, true);
+        view.setUint16(32, numOfChannels * bytesPerSample, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, audioBuffer.length * numOfChannels * bytesPerSample, true);
+
+        // Write PCM samples with an optimized approach to reduce memory usage
+        let offset = 44;
+        
+        if (bitDepth === 8) {
+            // 8-bit unsigned PCM - process in chunks to reduce memory impact
+            const CHUNK_SIZE = 16384; // Process 16K samples at a time
+            
+            for (let channel = 0; channel < numOfChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                
+                for (let i = 0; i < audioBuffer.length; i += CHUNK_SIZE) {
+                    const chunkEnd = Math.min(i + CHUNK_SIZE, audioBuffer.length);
+                    
+                    for (let j = i; j < chunkEnd; j++) {
+                        // Convert -1.0...1.0 to 0...255
+                        const sample = channelData[j];
+                        const intSample = Math.max(0, Math.min(255, ((sample + 1) / 2) * 255));
+                        
+                        // For 8-bit, we're writing at offset + j
+                        const writeOffset = 44 + j + (channel * audioBuffer.length);
+                        if (writeOffset < length) {
+                            view.setUint8(writeOffset, intSample);
+                        }
+                    }
+                }
+            }
+        } else {
+            // 16-bit signed PCM - also process in chunks
+            const CHUNK_SIZE = 8192; // Process 8K samples at a time for 16-bit
+            
+            for (let channel = 0; channel < numOfChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                
+                for (let i = 0; i < audioBuffer.length; i += CHUNK_SIZE) {
+                    const chunkEnd = Math.min(i + CHUNK_SIZE, audioBuffer.length);
+                    
+                    for (let j = i; j < chunkEnd; j++) {
+                        const sample = channelData[j];
+                        const intSample = Math.max(-1, Math.min(1, sample));
+                        
+                        // For 16-bit, we're writing at offset + (j * 2)
+                        const writeOffset = 44 + (j * 2) + (channel * audioBuffer.length * 2);
+                        if (writeOffset < length - 1) { // Ensure we have space for 2 bytes
+                            view.setInt16(writeOffset, intSample < 0 ? intSample * 0x8000 : intSample * 0x7FFF, true);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create the final blob with proper MIME type
+        return new Blob([wavBuffer], { type: 'audio/wav' });
     }
 
     // Function to analyze audio properties
@@ -373,6 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Find audio files in the ZIP
                 audioFiles = [];
+                mediaFiles = {}; // Reset media files object
                 let mediaStats = {
                     audio: 0,
                     photo: 0,
@@ -391,10 +675,45 @@ document.addEventListener('DOMContentLoaded', () => {
                                 name: fileName,
                                 file: zip.files[fileName]
                             });
+                            
+                            // Also store in mediaFiles for playback
+                            const audioData = await zip.files[fileName].async('arraybuffer');
+                            const audioBlob = new Blob([audioData], { 
+                                type: fileName.endsWith('.opus') ? 'audio/ogg' : 
+                                      fileName.endsWith('.mp3') ? 'audio/mpeg' :
+                                      fileName.endsWith('.m4a') ? 'audio/m4a' :
+                                      fileName.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg'
+                            });
+                            mediaFiles[fileName] = URL.createObjectURL(audioBlob);
+                            
                             mediaStats.audio++;
                         } else if (fileName.match(/\.(jpg|jpeg|png|gif)$/i) || fileName.includes('PHOTO')) {
+                            // Extract image files
+                            try {
+                                const imageData = await zip.files[fileName].async('arraybuffer');
+                                const imageBlob = new Blob([imageData], { 
+                                    type: fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ? 'image/jpeg' :
+                                          fileName.endsWith('.png') ? 'image/png' :
+                                          fileName.endsWith('.gif') ? 'image/gif' : 'image/jpeg'
+                                });
+                                mediaFiles[fileName] = URL.createObjectURL(imageBlob);
+                            } catch (error) {
+                                console.error(`Failed to extract image ${fileName}:`, error);
+                            }
                             mediaStats.photo++;
                         } else if (fileName.match(/\.(mp4|mov|avi)$/i) || fileName.includes('VIDEO')) {
+                            // Extract video files (for thumbnail and playback)
+                            try {
+                                const videoData = await zip.files[fileName].async('arraybuffer');
+                                const videoBlob = new Blob([videoData], { 
+                                    type: fileName.endsWith('.mp4') ? 'video/mp4' :
+                                          fileName.endsWith('.mov') ? 'video/quicktime' :
+                                          fileName.endsWith('.avi') ? 'video/x-msvideo' : 'video/mp4'
+                                });
+                                mediaFiles[fileName] = URL.createObjectURL(videoBlob);
+                            } catch (error) {
+                                console.error(`Failed to extract video ${fileName}:`, error);
+                            }
                             mediaStats.video++;
                         } else if (fileName.match(/\.(webp)$/i) || fileName.includes('STICKER')) {
                             mediaStats.sticker++;
@@ -463,6 +782,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 processedText = rawText;
                 console.log('Processing complete!');
 
+                // Add media files to structured data
+                structuredData.mediaFiles = mediaFiles;
+
                 // Display the results
                 if (resultContainer) {
                     resultContainer.textContent = processedText;
@@ -488,75 +810,260 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Add a demo simulation function
-    async function simulateTranscription(audioData, audioContext, fileName) {
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
-        
-        try {
-            const audioInfo = await analyzeAudio(audioData, audioContext);
-            const durationText = audioInfo.duration !== 'unknown' 
-                ? `about ${Math.round(audioInfo.duration)} seconds` 
-                : 'unknown duration';
-                
-            return `[Demo transcription: This is a simulated result for a ${durationText} audio file. Enable real API mode to use Whisper.]`;
-        } catch (error) {
-            return `[Demo transcription: This is a simulated result for an audio file. Enable real API mode to use Whisper.]`;
+    // Create a lightbox for viewing images
+    function createLightbox() {
+        // Check if lightbox already exists
+        if (document.getElementById('whatsapp-lightbox')) {
+            return;
         }
+        
+        const lightbox = document.createElement('div');
+        lightbox.id = 'whatsapp-lightbox';
+        lightbox.className = 'whatsapp-lightbox';
+        lightbox.innerHTML = `
+            <div class="lightbox-content">
+                <span class="lightbox-close">&times;</span>
+                <img class="lightbox-image" src="">
+                <video class="lightbox-video" controls style="display:none;"></video>
+                <div class="lightbox-caption"></div>
+            </div>
+        `;
+        
+        document.body.appendChild(lightbox);
+        
+        // Close lightbox when clicking the close button or outside the image
+        const closeBtn = document.querySelector('.lightbox-close');
+        closeBtn.addEventListener('click', () => {
+            lightbox.style.display = 'none';
+            
+            // Pause video if playing
+            const video = document.querySelector('.lightbox-video');
+            if (video) {
+                video.pause();
+            }
+        });
+        
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) {
+                lightbox.style.display = 'none';
+                
+                // Pause video if playing
+                const video = document.querySelector('.lightbox-video');
+                if (video) {
+                    video.pause();
+                }
+            }
+        });
+        
+        return lightbox;
     }
 
-    // Download button handlers
-    if (downloadTextButton) {
-        downloadTextButton.addEventListener('click', () => {
-            if (!processedText) return;
+    // Initialize lightbox
+    createLightbox();
 
-            const blob = new Blob([processedText], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'WhatsApp_Chat_With_Transcriptions.txt';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        });
+    // Function to show image in lightbox
+    function showMediaInLightbox(mediaUrl, caption, isVideo = false) {
+        const lightbox = document.getElementById('whatsapp-lightbox');
+        const lightboxImage = document.querySelector('.lightbox-image');
+        const lightboxVideo = document.querySelector('.lightbox-video');
+        const lightboxCaption = document.querySelector('.lightbox-caption');
+        
+        if (isVideo) {
+            lightboxVideo.src = mediaUrl;
+            lightboxVideo.style.display = 'block';
+            lightboxImage.style.display = 'none';
+        } else {
+            lightboxImage.src = mediaUrl;
+            lightboxImage.style.display = 'block';
+            lightboxVideo.style.display = 'none';
+        }
+        
+        lightboxCaption.textContent = caption || '';
+        lightbox.style.display = 'flex';
     }
 
-    if (downloadPdfButton) {
-        downloadPdfButton.addEventListener('click', () => {
-            const element = document.getElementById('whatsappContainer');
-            if (!element) return;
-
-            // Set some PDF options
-            const opt = {
-                margin: 10,
-                filename: 'WhatsApp_Chat_With_Transcriptions.pdf',
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2 },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
-            // Generate the PDF
-            html2pdf().set(opt).from(element).save();
-        });
+    // Create a reusable audio player component
+    function createAudioPlayer(audioUrl, durationSecs = 0) {
+        const audioPlayer = document.createElement('div');
+        audioPlayer.className = 'whatsapp-audio-player';
+        
+        // Format duration
+        const minutes = Math.floor(durationSecs / 60);
+        const seconds = Math.floor(durationSecs % 60);
+        const formattedDuration = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        
+        audioPlayer.innerHTML = `
+            <div class="audio-player-container">
+                <button class="audio-play-button">
+                    <span class="play-icon">▶</span>
+                    <span class="pause-icon" style="display:none;">⏸</span>
+                </button>
+                <div class="audio-waveform">
+                    <div class="audio-progress"></div>
+                </div>
+                <div class="audio-duration">${durationSecs > 0 ? formattedDuration : '0:00'}</div>
+                <div class="audio-speed-control">
+                    <button class="speed-btn active" data-speed="1">1x</button>
+                    <button class="speed-btn" data-speed="1.5">1.5x</button>
+                    <button class="speed-btn" data-speed="2">2x</button>
+                </div>
+            </div>
+            <audio preload="metadata">
+                <source src="${audioUrl}" type="audio/mpeg">
+                Your browser does not support the audio element.
+            </audio>
+        `;
+        
+        // Set up audio player functionality after it's added to the DOM
+        setTimeout(() => {
+            const audio = audioPlayer.querySelector('audio');
+            const playButton = audioPlayer.querySelector('.audio-play-button');
+            const playIcon = audioPlayer.querySelector('.play-icon');
+            const pauseIcon = audioPlayer.querySelector('.pause-icon');
+            const progress = audioPlayer.querySelector('.audio-progress');
+            const waveform = audioPlayer.querySelector('.audio-waveform');
+            const durationDisplay = audioPlayer.querySelector('.audio-duration');
+            const speedButtons = audioPlayer.querySelectorAll('.speed-btn');
+            
+            // Update audio duration once metadata is loaded
+            audio.addEventListener('loadedmetadata', () => {
+                const minutes = Math.floor(audio.duration / 60);
+                const seconds = Math.floor(audio.duration % 60);
+                durationDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            });
+            
+            // Play/pause functionality
+            playButton.addEventListener('click', () => {
+                if (audio.paused) {
+                    // Pause all other audio elements first
+                    document.querySelectorAll('.whatsapp-audio-player audio').forEach(el => {
+                        if (el !== audio && !el.paused) {
+                            el.pause();
+                            const playerContainer = el.closest('.whatsapp-audio-player');
+                            playerContainer.querySelector('.play-icon').style.display = 'inline-block';
+                            playerContainer.querySelector('.pause-icon').style.display = 'none';
+                        }
+                    });
+                    
+                    audio.play();
+                    playIcon.style.display = 'none';
+                    pauseIcon.style.display = 'inline-block';
+                } else {
+                    audio.pause();
+                    playIcon.style.display = 'inline-block';
+                    pauseIcon.style.display = 'none';
+                }
+            });
+            
+            // Speed control functionality
+            speedButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // Remove active class from all buttons
+                    speedButtons.forEach(b => b.classList.remove('active'));
+                    
+                    // Add active class to clicked button
+                    btn.classList.add('active');
+                    
+                    // Set playback rate
+                    const speed = parseFloat(btn.getAttribute('data-speed'));
+                    audio.playbackRate = speed;
+                    
+                    // Update timing calculations for the progress display
+                    updateTimeDisplay();
+                });
+            });
+            
+            // Function to update time display based on current playback rate
+            function updateTimeDisplay() {
+                const currentMin = Math.floor(audio.currentTime / 60);
+                const currentSec = Math.floor(audio.currentTime % 60);
+                durationDisplay.textContent = `${currentMin}:${currentSec < 10 ? '0' : ''}${currentSec}`;
+            }
+            
+            // Update progress bar
+            audio.addEventListener('timeupdate', () => {
+                const percent = (audio.currentTime / audio.duration) * 100;
+                progress.style.width = `${percent}%`;
+                
+                // Update time display
+                updateTimeDisplay();
+            });
+            
+            // Reset when ended
+            audio.addEventListener('ended', () => {
+                audio.currentTime = 0;
+                progress.style.width = '0%';
+                playIcon.style.display = 'inline-block';
+                pauseIcon.style.display = 'none';
+                
+                // Reset time display to total duration
+                const minutes = Math.floor(audio.duration / 60);
+                const seconds = Math.floor(audio.duration % 60);
+                durationDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            });
+            
+            // Allow clicking on waveform to seek
+            waveform.addEventListener('click', (e) => {
+                const rect = waveform.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                audio.currentTime = pos * audio.duration;
+            });
+        }, 0);
+        
+        return audioPlayer;
     }
 
-    if (whatsappViewBtn) {
-        whatsappViewBtn.addEventListener('click', function() {
-            this.classList.add('active');
-            if (rawTextBtn) rawTextBtn.classList.remove('active');
-            if (whatsappViewSection) whatsappViewSection.style.display = 'block';
-            if (rawTextSection) rawTextSection.style.display = 'none';
+    // Process URLs in message content to create link previews
+    function processMessageLinks(content) {
+        // Regular expression to find URLs
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls = content.match(urlRegex);
+        
+        if (!urls || urls.length === 0) {
+            return { content, linkPreviews: [] };
+        }
+        
+        // Keep track of link previews to add after the message
+        const linkPreviews = [];
+        
+        // Convert URLs to clickable links
+        let processedContent = content.replace(urlRegex, (url) => {
+            // Add to link previews
+            linkPreviews.push(url);
+            
+            // Return clickable link
+            return `<a href="${url}" target="_blank" class="message-link">${url}</a>`;
         });
+        
+        return { content: processedContent, linkPreviews };
     }
 
-    if (rawTextBtn) {
-        rawTextBtn.addEventListener('click', function() {
-            this.classList.add('active');
-            if (whatsappViewBtn) whatsappViewBtn.classList.remove('active');
-            if (whatsappViewSection) whatsappViewSection.style.display = 'none';
-            if (rawTextSection) rawTextSection.style.display = 'block';
+    // Create link preview element
+    function createLinkPreview(url) {
+        const previewEl = document.createElement('div');
+        previewEl.className = 'link-preview';
+        
+        // Extract domain for display
+        let domain = "";
+        try {
+            domain = new URL(url).hostname;
+        } catch (e) {
+            domain = url;
+        }
+        
+        previewEl.innerHTML = `
+            <div class="link-preview-content">
+                <div class="link-preview-domain">${domain}</div>
+                <div class="link-preview-title">${url}</div>
+            </div>
+        `;
+        
+        // Make the entire preview clickable
+        previewEl.addEventListener('click', () => {
+            window.open(url, '_blank');
         });
+        
+        return previewEl;
     }
 
     // Analyze audio sources and classify them by speaker
@@ -687,6 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Structure content based on message type
             let contentHtml = '';
             let senderHtml = '';
+            let linkPreviewEls = [];
 
             // Add sender name for all messages in a dialogue, or only received messages in a group
             if (isDialogue || !isFromMe) {
@@ -696,7 +1204,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Format content based on message type
             switch (msg.type) {
                 case 'text':
-                    contentHtml = `<div class="message-content">${formatMessageText(msg.content)}</div>`;
+                    // Process links in the text
+                    const { content: processedContent, linkPreviews } = processMessageLinks(msg.content);
+                    contentHtml = `<div class="message-content">${formatMessageText(processedContent)}</div>`;
+                    
+                    // Create link previews
+                    linkPreviews.forEach(url => {
+                        linkPreviewEls.push(createLinkPreview(url));
+                    });
                     break;
 
                 case 'audio':
@@ -710,28 +1225,60 @@ document.addEventListener('DOMContentLoaded', () => {
                     contentHtml = `
                         <div class="message-content">
                             ${voiceLabel}
-                            <span class="media-indicator">🔊</span> 
-                            ${formatAudioTranscription(msg.content)}
+                            <div class="audio-message-container">
+                                <div class="audio-player-wrapper"></div>
+                                <div class="audio-transcript-text">${formatAudioTranscription(msg.content)}</div>
+                            </div>
                         </div>
                     `;
                     break;
 
                 case 'photo':
-                    contentHtml = `
-                        <div class="message-content">
-                            <span class="media-indicator">📷</span> 
-                            Photo: ${msg.fileName || ''}
-                        </div>
-                    `;
+                    // Check if we have the actual image file
+                    const imageSrc = data.mediaFiles && data.mediaFiles[msg.fileName];
+                    if (imageSrc) {
+                        contentHtml = `
+                            <div class="message-content">
+                                <div class="image-container">
+                                    <img src="${imageSrc}" alt="Image" class="chat-image" data-filename="${msg.fileName}">
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        contentHtml = `
+                            <div class="message-content">
+                                <span class="media-indicator">📷</span> 
+                                Photo: ${msg.fileName || ''}
+                            </div>
+                        `;
+                    }
                     break;
 
                 case 'video':
-                    contentHtml = `
-                        <div class="message-content">
-                            <span class="media-indicator">🎥</span> 
-                            Video: ${msg.fileName || ''}
-                        </div>
-                    `;
+                    // Check if we have the actual video file
+                    const videoSrc = data.mediaFiles && data.mediaFiles[msg.fileName];
+                    if (videoSrc) {
+                        contentHtml = `
+                            <div class="message-content">
+                                <div class="video-container">
+                                    <video class="chat-video" data-filename="${msg.fileName}">
+                                        <source src="${videoSrc}" type="video/mp4">
+                                        Your browser does not support video playback.
+                                    </video>
+                                    <div class="video-play-overlay">
+                                        <div class="video-play-button">▶</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        contentHtml = `
+                            <div class="message-content">
+                                <span class="media-indicator">🎥</span> 
+                                Video: ${msg.fileName || ''}
+                            </div>
+                        `;
+                    }
                     break;
 
                 case 'sticker':
@@ -767,6 +1314,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Add to containers
             messagesContainer.appendChild(messageEl);
+            
+            // Add link previews after the message if needed
+            linkPreviewEls.forEach(previewEl => {
+                const linkPreviewContainer = document.createElement('div');
+                linkPreviewContainer.className = `message-link-preview ${isFromMe ? 'sent' : 'received'}`;
+                linkPreviewContainer.appendChild(previewEl);
+                messagesContainer.appendChild(linkPreviewContainer);
+            });
+            
+            // Set up media interactions for this message
+            if (msg.type === 'photo' && data.mediaFiles && data.mediaFiles[msg.fileName]) {
+                const img = messageEl.querySelector('.chat-image');
+                if (img) {
+                    img.addEventListener('click', () => {
+                        showMediaInLightbox(data.mediaFiles[msg.fileName], msg.fileName);
+                    });
+                }
+            }
+            
+            if (msg.type === 'video' && data.mediaFiles && data.mediaFiles[msg.fileName]) {
+                const videoContainer = messageEl.querySelector('.video-container');
+                if (videoContainer) {
+                    videoContainer.addEventListener('click', () => {
+                        showMediaInLightbox(data.mediaFiles[msg.fileName], msg.fileName, true);
+                    });
+                }
+            }
+            
+            // Add audio player for audio messages
+            if (msg.type === 'audio' && msg.fileName && data.mediaFiles && data.mediaFiles[msg.fileName]) {
+                const audioPlayerWrapper = messageEl.querySelector('.audio-player-wrapper');
+                if (audioPlayerWrapper) {
+                    const audioPlayer = createAudioPlayer(data.mediaFiles[msg.fileName]);
+                    audioPlayerWrapper.appendChild(audioPlayer);
+                }
+            }
         });
 
         // Scroll to the bottom
@@ -945,7 +1528,11 @@ document.addEventListener('DOMContentLoaded', () => {
         structuredData.participants = Array.from(structuredData.participants);
 
         // Sort messages by timestamp
-        structuredData.messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        structuredData.messages.sort((a, b) => {
+            const timestampA = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
+            const timestampB = b.timestamp instanceof Date ? a.timestamp : new Date(b.timestamp);
+            return timestampA - timestampB;
+        });
 
         return { rawText, structuredData };
     }

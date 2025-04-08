@@ -241,6 +241,7 @@ button:hover {
     clear: both;
     word-wrap: break-word;
     animation: fadeIn 0.3s ease;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.1);
 }
 
 .message.received {
@@ -417,4 +418,289 @@ button:hover {
 .api-mode-toggle input[type="checkbox"] {
     width: auto;
     margin: 0;
+}
+
+/* Audio player styles */
+.whatsapp-audio-player {
+    margin: 5px 0;
+    border-radius: 20px;
+    background-color: #f0f0f0;
+    padding: 5px 10px;
+    max-width: 280px;
+}
+
+.audio-player-container {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    position: relative;
+}
+
+.audio-play-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: #25D366;
+    border: none;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.audio-waveform {
+    flex-grow: 1;
+    height: 24px;
+    background-color: #dcdcdc;
+    border-radius: 12px;
+    position: relative;
+    margin-right: 10px;
+    overflow: hidden;
+    background-image: repeating-linear-gradient(
+        to right,
+        #ccc,
+        #ccc 2px,
+        #dcdcdc 2px,
+        #dcdcdc 4px
+    );
+}
+
+.audio-progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 0%;
+    background-color: #25D366;
+    border-radius: 12px;
+    transition: width 0.1s linear;
+}
+
+.audio-duration {
+    font-size: 12px;
+    color: #7d7d7d;
+    min-width: 40px;
+    text-align: right;
+    flex-shrink: 0;
+    margin-right: 5px;
+}
+
+/* Speed Control Styles */
+.audio-speed-control {
+    display: flex;
+    position: absolute;
+    right: 0;
+    top: -24px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    font-size: 11px;
+    overflow: hidden;
+    transition: opacity 0.2s;
+    opacity: 0.7;
+}
+
+.whatsapp-audio-player:hover .audio-speed-control {
+    opacity: 1;
+}
+
+.speed-btn {
+    background: none;
+    border: none;
+    padding: 3px 5px;
+    cursor: pointer;
+    color: #555;
+    font-size: 10px;
+    font-weight: bold;
+    transition: background-color 0.2s;
+}
+
+.speed-btn:hover {
+    background-color: #f5f5f5;
+}
+
+.speed-btn.active {
+    background-color: #e1f5e9;
+    color: #128C7E;
+}
+
+/* Image styles */
+.image-container {
+    margin: 5px 0;
+    border-radius: 5px;
+    overflow: hidden;
+    max-width: 250px;
+}
+
+.chat-image {
+    width: 100%;
+    height: auto;
+    display: block;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.chat-image:hover {
+    transform: scale(1.02);
+}
+
+/* Video styles */
+.video-container {
+    margin: 5px 0;
+    border-radius: 5px;
+    overflow: hidden;
+    max-width: 250px;
+    position: relative;
+    cursor: pointer;
+}
+
+.chat-video {
+    width: 100%;
+    height: auto;
+    display: block;
+    background-color: #000;
+}
+
+.video-play-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+.video-play-button {
+    width: 50px;
+    height: 50px;
+    background-color: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+/* Lightbox styles */
+.whatsapp-lightbox {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    padding-top: 30px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.9);
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.lightbox-content {
+    margin: auto;
+    display: block;
+    max-width: 90%;
+    max-height: 90%;
+    position: relative;
+}
+
+.lightbox-image, .lightbox-video {
+    display: block;
+    max-width: 100%;
+    max-height: 80vh;
+    margin: 0 auto;
+    border-radius: 4px;
+}
+
+.lightbox-caption {
+    margin: 10px 0 0;
+    color: #fff;
+    text-align: center;
+    font-size: 14px;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -30px;
+    right: 10px;
+    color: #fff;
+    font-size: 30px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+/* Link preview styles */
+.message-link {
+    color: #0070CC;
+    text-decoration: none;
+}
+
+.message-link:hover {
+    text-decoration: underline;
+}
+
+.message-link-preview {
+    max-width: 75%;
+    margin-bottom: 8px;
+    clear: both;
+}
+
+.message-link-preview.sent {
+    float: right;
+}
+
+.message-link-preview.received {
+    float: left;
+}
+
+.link-preview {
+    border-radius: 7.5px;
+    overflow: hidden;
+    border: 1px solid #e5e5e5;
+    background-color: #fff;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.link-preview:hover {
+    transform: translateY(-2px);
+}
+
+.link-preview-content {
+    padding: 10px;
+}
+
+.link-preview-domain {
+    font-size: 12px;
+    color: #25D366;
+    margin-bottom: 5px;
+}
+
+.link-preview-title {
+    font-size: 14px;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.message.received .message-content img,
+.message.received .message-content video {
+    border-radius: 7.5px;
+    max-width: 100%;
+}
+
+.message.sent .message-content img,
+.message.sent .message-content video {
+    border-radius: 7.5px;
+    max-width: 100%;
 }
