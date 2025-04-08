@@ -128,13 +128,31 @@ button:hover {
     background-color: #f5fff5;
 }
 
-.api-key-section input[type="password"] {
-    width: 100%;
-    padding: 10px;
+.api-key-input-container {
+    display: flex;
     margin-bottom: 10px;
+}
+
+.api-key-input-container input[type="password"] {
+    flex: 1;
+    padding: 10px;
     border: 1px solid #ccc;
-    border-radius: 4px;
+    border-radius: 4px 0 0 4px;
     font-family: monospace;
+}
+
+.save-api-btn {
+    background-color: #075E54;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.save-api-btn:hover {
+    background-color: #128C7E;
 }
 
 .api-info {
@@ -401,23 +419,6 @@ button:hover {
         height: auto;
         overflow: visible;
     }
-}
-
-/* API Mode Toggle */
-.api-mode-toggle {
-    display: flex;
-    align-items: center;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-
-.api-mode-toggle label {
-    margin-right: 10px;
-}
-
-.api-mode-toggle input[type="checkbox"] {
-    width: auto;
-    margin: 0;
 }
 
 /* Audio player styles */

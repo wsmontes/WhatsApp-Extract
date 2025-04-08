@@ -13,13 +13,12 @@
         
         <div class="api-key-section">
             <h2>OpenAI API Key</h2>
-            <input type="password" id="apiKeyInput" placeholder="Enter your OpenAI API key for transcription">
-            <div class="api-mode-toggle">
-                <label for="demoModeToggle">Demo Mode (no API charges):</label>
-                <input type="checkbox" id="demoModeToggle" checked>
+            <div class="api-key-input-container">
+                <input type="password" id="apiKeyInput" placeholder="Enter your OpenAI API key for transcription">
+                <button id="saveApiKeyBtn" class="save-api-btn">Save Key</button>
             </div>
             <div class="api-info">
-                <p><strong>Note:</strong> Your API key is required for audio transcription and is only used in your browser. It is never stored or sent to our servers.</p>
+                <p><strong>Note:</strong> Your API key is required for audio transcription and is only used in your browser. It is stored locally on your device for convenience.</p>
                 <p>You can get an API key from <a href="https://platform.openai.com/account/api-keys" target="_blank">OpenAI's website</a>. Transcription costs may apply to your OpenAI account.</p>
             </div>
         </div>

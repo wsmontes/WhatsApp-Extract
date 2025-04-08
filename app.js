@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // DOM elements
     const apiKeyInput = document.getElementById('apiKeyInput');
+    const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
     const zipFileInput = document.getElementById('zipFileInput');
     const processButton = document.getElementById('processButton');
     const progressSection = document.getElementById('progressSection');
@@ -22,6 +23,35 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioFiles = [];
     let transcriptions = {};
     let mediaFiles = {}; // Store references to extracted media files
+
+    // Load saved API key if exists
+    function loadSavedApiKey() {
+        const savedApiKey = localStorage.getItem('whatsapp_extract_api_key');
+        if (savedApiKey && apiKeyInput) {
+            apiKeyInput.value = savedApiKey;
+        }
+    }
+
+    // Save API key to localStorage
+    function saveApiKey(apiKey) {
+        if (apiKey) {
+            localStorage.setItem('whatsapp_extract_api_key', apiKey);
+            alert('API key saved successfully!');
+        } else {
+            alert('Please enter an API key to save.');
+        }
+    }
+
+    // Initialize saved API key
+    loadSavedApiKey();
+
+    // Add event listener for save button
+    if (saveApiKeyBtn) {
+        saveApiKeyBtn.addEventListener('click', () => {
+            const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
+            saveApiKey(apiKey);
+        });
+    }
 
     // Define the updateProgress function
     function updateProgress(percent, message) {
@@ -314,20 +344,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to transcribe audio using OpenAI's Whisper API
     async function transcribeAudio(audioData, audioContext, apiKey, fileName) {
         try {
-            // Check if demo mode is enabled
-            const demoMode = document.getElementById('demoModeToggle') && 
-                             document.getElementById('demoModeToggle').checked;
-            
-            if (demoMode) {
-                // Simulate transcription for demo mode
-                await new Promise(resolve => setTimeout(resolve, 500));
-                const audioInfo = await analyzeAudio(audioData, audioContext);
-                const durationText = audioInfo.duration !== 'unknown' 
-                    ? `about ${Math.round(audioInfo.duration)} seconds` 
-                    : 'unknown duration';
-                return `[Demo transcription: This is a simulated result for a ${durationText} audio file. Enable real API mode to use Whisper.]`;
-            }
-            
             // First check if file is too large
             if (!isFileSizeWithinLimits(audioData)) {
                 console.log(`File ${fileName} exceeds 25MB limit. Attempting to process...`);
@@ -599,6 +615,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Please enter your OpenAI API key for transcription.');
                 return;
             }
+
+            // Auto-save API key when processing starts
+            saveApiKey(apiKey);
 
             try {
                 console.log('Starting processing of ZIP file:', zipFileInput.files[0].name);
