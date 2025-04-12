@@ -153,6 +153,11 @@ function setupAudioPlayerEvents(audioPlayer) {
  * @returns {Object} - Processed content and link previews
  */
 export function processMessageLinks(content) {
+    if (!content) return { content, linkPreviews: [] };
+    
+    // Sanitize content first to remove any malformed links
+    content = content.replace(/<a href="<a href="([^"]+)"[^>]*>([^<]+)<\/a>"[^>]*>/g, '$2');
+    
     // Regular expression to find URLs
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const urls = content.match(urlRegex);
@@ -166,11 +171,15 @@ export function processMessageLinks(content) {
     
     // Convert URLs to clickable links
     let processedContent = content.replace(urlRegex, (url) => {
-        // Add to link previews
-        linkPreviews.push(url);
+        // Clean up the URL if needed
+        const cleanUrl = url.trim().replace(/["'><]/g, '');
         
-        // Return clickable link
-        return `<a href="${url}" target="_blank" class="message-link">${url}</a>`;
+        // Add to link previews
+        linkPreviews.push(cleanUrl);
+        
+        // Return properly formed clickable link with max width
+        const displayUrl = cleanUrl.length > 60 ? cleanUrl.substring(0, 57) + '...' : cleanUrl;
+        return `<a href="${cleanUrl}" target="_blank" class="message-link">${displayUrl}</a>`;
     });
     
     return { content: processedContent, linkPreviews };

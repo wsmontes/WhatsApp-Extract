@@ -230,7 +230,114 @@ export function updateProgress(percent, message) {
  */
 export function toggleViewState(hasContent) {
     const chatBody = document.getElementById('chatBody');
+    const emptyState = document.getElementById('emptyState');
+    
     if (chatBody) {
-        chatBody.style.display = 'flex';
+        chatBody.style.display = hasContent ? 'flex' : 'none';
     }
+    
+    if (emptyState) {
+        emptyState.style.display = hasContent ? 'none' : 'flex';
+    }
+    
+    // If we have content, ensure date dividers are properly displayed
+    // and text wrapping is fixed
+    if (hasContent) {
+        refreshDateDividers();
+        fixMessageTextWrapping();
+    }
+}
+
+/**
+ * Fix message text wrapping issues
+ */
+export function fixMessageTextWrapping() {
+    // Fix message content text wrapping
+    const messageContents = document.querySelectorAll('.message-content');
+    messageContents.forEach(content => {
+        // Add proper text wrapping styles
+        content.style.wordBreak = 'break-word';
+        content.style.overflowWrap = 'break-word';
+        content.style.whiteSpace = 'pre-wrap';
+        content.style.maxWidth = '100%';
+        
+        // Fix links inside messages
+        const links = content.querySelectorAll('a');
+        links.forEach(link => {
+            link.style.wordBreak = 'break-all';
+            link.style.maxWidth = '100%';
+            link.style.display = 'inline-block';
+        });
+    });
+    
+    // Ensure messages don't overflow their container
+    const messages = document.querySelectorAll('.message');
+    messages.forEach(message => {
+        message.style.maxWidth = '75%';
+        message.style.boxSizing = 'border-box';
+        message.style.wordBreak = 'break-word';
+    });
+    
+    // Fix the width of date dividers
+    const dateDividers = document.querySelectorAll('.date-divider');
+    dateDividers.forEach(divider => {
+        divider.style.width = '100%';
+        divider.style.maxWidth = '100%';
+        divider.style.boxSizing = 'border-box';
+        divider.style.textAlign = 'center';
+    });
+    
+    // Add a resize handler to update sizes when window changes
+    if (!window.whatsAppResizeHandlerAdded) {
+        window.addEventListener('resize', debounce(() => {
+            fixMessageTextWrapping();
+        }, 250));
+        window.whatsAppResizeHandlerAdded = true;
+    }
+}
+
+/**
+ * Debounce function to limit rapid function calls
+ * @param {Function} func - Function to debounce
+ * @param {number} wait - Wait time in milliseconds
+ * @returns {Function} - Debounced function
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function() {
+        const context = this;
+        const args = arguments;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            func.apply(context, args);
+        }, wait);
+    };
+}
+
+/**
+ * Refresh date dividers in the chat
+ * Ensures all date dividers show the correctly formatted date
+ */
+export function refreshDateDividers() {
+    const dateDividers = document.querySelectorAll('.date-divider');
+    
+    dateDividers.forEach(divider => {
+        const dateTimestamp = divider.getAttribute('data-timestamp');
+        if (dateTimestamp) {
+            const date = new Date(parseInt(dateTimestamp));
+            const formattedDate = formatDateForDivider(date);
+            
+            // Update the date text
+            let dateElement = divider.querySelector('.date-text');
+            if (!dateElement) {
+                // Create the date element if it doesn't exist
+                dateElement = document.createElement('span');
+                dateElement.className = 'date-text';
+                divider.appendChild(dateElement);
+            }
+            
+            dateElement.textContent = formattedDate;
+            divider.style.display = 'flex'; // Ensure the divider is visible
+        }
+    });
 }
