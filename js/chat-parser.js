@@ -116,7 +116,9 @@ export function mergeChatWithTranscriptions(chatLines, transcriptions) {
     let structuredData = {
         title: 'WhatsApp Chat',
         participants: new Set(),
-        messages: []
+        messages: [],
+        chatType: 'unknown', // Default chat type
+        userPhoneNumber: null // Will store the user's identifier
     };
 
     let audioMessagesFound = 0;
@@ -246,12 +248,90 @@ export function mergeChatWithTranscriptions(chatLines, transcriptions) {
         }
     }
 
+    // Analyze senders to identify the user (most frequent sender is likely the user)
+    const senderFrequency = {};
+    chatLines.forEach(line => {
+        if (line.type === 'message' && line.sender) {
+            senderFrequency[line.sender] = (senderFrequency[line.sender] || 0) + 1;
+        }
+    });
+    
+    // Find the most frequent sender
+    let maxCount = 0;
+    let mostFrequentSender = null;
+    for (const sender in senderFrequency) {
+        if (senderFrequency[sender] > maxCount) {
+            maxCount = senderFrequency[sender];
+            mostFrequentSender = sender;
+        }
+    }
+    
+    // Set the user identifier 
+    structuredData.userPhoneNumber = mostFrequentSender;
+    console.log(`Identified user as: ${mostFrequentSender}`);
+
+    // After processing all messages and establishing the participants set
+    // Convert participants set to array
+    structuredData.participants = Array.from(structuredData.participants);
+    
+    // Determine if this is a group chat or individual chat
+    if (structuredData.participants.length > 2) {
+        structuredData.chatType = 'group';
+        
+        // Try to extract group name from the first system message
+        const systemMessages = chatLines.filter(line => line.type === 'system');
+        for (const msg of systemMessages) {
+            // Look for typical group creation messages
+            if (msg.message && (
+                msg.message.includes('created group') || 
+                msg.message.includes('created this group') ||
+                msg.message.includes('changed the subject') ||
+                msg.message.includes('changed the group')
+            )) {
+                const groupNameMatch = msg.message.match(/["'](.+?)["']/);
+                if (groupNameMatch && groupNameMatch[1]) {
+                    structuredData.title = groupNameMatch[1];
+                    
+                    // If we found a group name in system message, make sure it's not in participants
+                    structuredData.participants = structuredData.participants.filter(
+                        participant => participant !== groupNameMatch[1]
+                    );
+                    break;
+                }
+            }
+        }
+        
+        // If no group name was found from system messages, use a generic name
+        if (structuredData.title === 'WhatsApp Chat') {
+            structuredData.title = `Group Chat (${structuredData.participants.length} participants)`;
+        }
+        
+        // Also filter out any other system message-related "participants" that are not real contacts
+        structuredData.participants = structuredData.participants.filter(
+            participant => !participant.includes('changed the group') &&
+                          !participant.includes('added') &&
+                          !participant.includes('removed') &&
+                          !participant.includes('left') &&
+                          !participant.includes('Messages to this group') &&
+                          !participant.includes('now secured with')
+        );
+    } else if (structuredData.participants.length === 2) {
+        structuredData.chatType = 'individual';
+        
+        // For individual chats, get the contact's name (the other participant)
+        structuredData.participants.forEach(participant => {
+            if (participant !== mostFrequentSender) {
+                structuredData.title = participant;
+            }
+        });
+    } else if (structuredData.participants.length === 1) {
+        structuredData.chatType = 'individual';
+        structuredData.title = structuredData.participants[0];
+    }
+
     console.log(`\n==== MERGE COMPLETE ====`); 
     console.log(`Total audio messages found: ${audioMessagesFound}`);
     console.log(`Audio messages with matched transcriptions: ${audioMessagesMatched}`);
-
-    // Convert participants set to array
-    structuredData.participants = Array.from(structuredData.participants);
 
     // Sort messages by timestamp
     structuredData.messages.sort((a, b) => {

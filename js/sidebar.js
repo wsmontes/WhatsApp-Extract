@@ -29,12 +29,15 @@ export function addChatToSidebar(data) {
     const chatItem = document.createElement('div');
     chatItem.className = 'chat-item';
     chatItem.setAttribute('data-chat-id', data.chatId || 'default');
+    chatItem.setAttribute('data-chat-type', data.chatType || 'unknown');
     
-    // Create avatar based on chat title or first letter of first participant
+    // Create avatar based on chat type and title
     const chatTitle = data.title || 'WhatsApp Chat';
-    const avatarInitial = (data.participants && data.participants.length > 0) 
-        ? data.participants[0].charAt(0).toUpperCase() 
-        : chatTitle.charAt(0).toUpperCase();
+    const isGroup = data.chatType === 'group';
+    
+    // For individual chats: use first letter of contact name
+    // For group chats: use first letter of group name
+    const avatarInitial = chatTitle.charAt(0).toUpperCase(); 
     
     // Format the last message timestamp
     const lastMessageTimestamp = data.messages && data.messages.length > 0 
@@ -45,6 +48,8 @@ export function addChatToSidebar(data) {
     
     // Get preview of last message
     let lastMessagePreview = '';
+    let lastMessageSender = '';
+    
     if (data.messages && data.messages.length > 0) {
         const lastMsg = data.messages[data.messages.length - 1];
         
@@ -64,22 +69,30 @@ export function addChatToSidebar(data) {
             lastMessagePreview = 'Message';
         }
         
-        // If group chat, prepend sender name to last message preview
-        if (data.participants && data.participants.length > 2 && lastMsg.sender) {
-            lastMessagePreview = `${lastMsg.sender.split(' ')[0]}: ${lastMessagePreview}`;
+        // For message previews, show the sender name only if it's not the user
+        if (lastMsg.sender && lastMsg.sender !== data.userPhoneNumber) {
+            lastMessageSender = lastMsg.sender.split(' ')[0];
         }
     }
     
+    // Customize avatar based on chat type
+    const avatarClass = isGroup ? 'group-avatar' : 'individual-avatar';
+    const avatarBgColor = isGroup ? '#00a884' : '#128c7e'; // WhatsApp colors
+    
+    // Generate HTML with appropriate styling
     chatItem.innerHTML = `
-        <div class="chat-avatar">
-            <span>${avatarInitial}</span>
+        <div class="chat-avatar ${avatarClass}" style="background-color: ${avatarBgColor};">
+            ${isGroup ? '<i class="fas fa-users" style="font-size: 14px;"></i>' : '<span>' + avatarInitial + '</span>'}
         </div>
         <div class="chat-info">
             <div class="chat-header">
                 <div class="chat-title">${chatTitle}</div>
                 <div class="chat-time">${timeString}</div>
             </div>
-            <div class="chat-last-message">${lastMessagePreview}</div>
+            <div class="chat-last-message">
+                ${isGroup && lastMessageSender ? `<span class="sender-name">${lastMessageSender}:</span> ` : ''}
+                ${lastMessagePreview}
+            </div>
         </div>
     `;
     
