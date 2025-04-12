@@ -16,33 +16,34 @@
     <!-- Main app layout - Left sidebar and content area -->
     <div class="wa-sidebar d-none d-lg-flex">
         <div class="wa-sidebar-header">
-            <div class="profile-img">
-                <i class="fa-solid fa-user"></i>
+            <div class="profile-section">
+                <div class="sidebar-profile-img">
+                    <i class="fas fa-user"></i>
+                </div>
             </div>
             <div class="sidebar-actions">
                 <button class="btn-icon" id="btnShowSettings" title="Settings">
-                    <i class="fa-solid fa-gear"></i>
+                    <i class="fas fa-gear"></i>
                 </button>
                 <button class="btn-icon" id="btnShowInfo" title="Info">
-                    <i class="fa-solid fa-circle-info"></i>
+                    <i class="fas fa-circle-info"></i>
+                </button>
+                <button class="btn-icon" id="uploadBtn" title="Upload Chat">
+                    <i class="fas fa-plus"></i>
                 </button>
             </div>
         </div>
         <div class="wa-sidebar-search">
             <div class="search-container">
-                <i class="fa-solid fa-magnifying-glass"></i>
+                <i class="fas fa-magnifying-glass"></i>
                 <span>WhatsApp Chat Extractor</span>
             </div>
         </div>
         <div class="wa-sidebar-chats">
-            <div class="sidebar-chat active">
-                <div class="chat-avatar">
-                    <i class="fa-solid fa-file-zipper"></i>
-                </div>
-                <div class="chat-info">
-                    <h6>WhatsApp Extract</h6>
-                    <p>Process your exported chats</p>
-                </div>
+            <!-- Chat list will be populated here -->
+            <div class="no-chats-placeholder text-center py-4 text-muted">
+                <i class="fas fa-comments fa-2x mb-3"></i>
+                <p>Import a chat to get started</p>
             </div>
         </div>
     </div>
@@ -100,18 +101,7 @@
                 </div>
                 
                 <!-- Empty state for chat -->
-                <div class="wa-empty-state" id="emptyState">
-                    <div class="empty-state-content">
-                        <div class="empty-state-icon">
-                            <i class="fa-solid fa-file-import"></i>
-                        </div>
-                        <h3>Let's get started!</h3>
-                        <p>Upload a WhatsApp chat export ZIP file to begin</p>
-                        <button class="btn btn-primary btn-lg mt-3" id="uploadBtn">
-                            <i class="fa-solid fa-upload me-2"></i>Upload Chat Export
-                        </button>
-                    </div>
-                </div>
+
                 
                 <!-- Chat content container -->
                 <div class="wa-chat-body" id="chatBody" style="display: none;">
