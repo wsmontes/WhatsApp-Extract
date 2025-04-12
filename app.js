@@ -1,14 +1,46 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM elements
+    // UI Elements
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadModal = document.getElementById('uploadModal');
+    const fabMain = document.getElementById('fabMain');
+    const fabUpload = document.getElementById('fabUpload');
+    const fabApiKey = document.getElementById('fabApiKey');
+    const fabInfo = document.getElementById('fabInfo');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const infoPanel = document.getElementById('infoPanel');
+    const btnShowSettings = document.getElementById('btnShowSettings');
+    const btnShowInfo = document.getElementById('btnShowInfo');
+    const closeSettingsPanel = document.getElementById('closeSettingsPanel');
+    const closeInfoPanel = document.getElementById('closeInfoPanel');
+    const processingOverlay = document.getElementById('processingOverlay');
+    const lightTheme = document.getElementById('lightTheme');
+    const darkTheme = document.getElementById('darkTheme');
+    const systemTheme = document.getElementById('systemTheme');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileSlideMenu = document.getElementById('mobileSlideMenu');
+    const closeSlideMenu = document.getElementById('closeSlideMenu');
+    const mobileUploadBtn = document.getElementById('mobileUploadBtn');
+    const mobileApiKeyBtn = document.getElementById('mobileApiKeyBtn');
+    const mobileInfoBtn = document.getElementById('mobileInfoBtn');
+    const mobileWhatsappViewBtn = document.getElementById('mobileWhatsappViewBtn');
+    const mobileRawTextBtn = document.getElementById('mobileRawTextBtn');
+    const mobileDownloadTextBtn = document.getElementById('mobileDownloadTextBtn');
+    const mobileDownloadPdfBtn = document.getElementById('mobileDownloadPdfBtn');
+    const apiKeyWarning = document.getElementById('apiKeyWarning');
+    const setApiKeyFromModal = document.getElementById('setApiKeyFromModal');
+    const emptyState = document.getElementById('emptyState');
+    const chatBody = document.getElementById('chatBody');
+    const lightboxDownload = document.getElementById('lightboxDownload');
+    const toastContainer = document.getElementById('toastContainer');
+    
+    // DOM elements from existing code
     const apiKeyInput = document.getElementById('apiKeyInput');
     const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
     const zipFileInput = document.getElementById('zipFileInput');
     const processButton = document.getElementById('processButton');
-    const progressSection = document.getElementById('progressSection');
     const progressBar = document.getElementById('progressBar');
     const statusText = document.getElementById('statusText');
     const currentFile = document.getElementById('currentFile');
-    const viewOptions = document.getElementById('viewOptions');
     const whatsappViewSection = document.getElementById('whatsappViewSection');
     const rawTextSection = document.getElementById('rawTextSection');
     const resultContainer = document.getElementById('resultContainer');
@@ -23,7 +55,378 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioFiles = [];
     let transcriptions = {};
     let mediaFiles = {}; // Store references to extracted media files
+    let currentMediaFile = null; // For lightbox download functionality
+    
+    // Theme handling
+    function initTheme() {
+        const savedTheme = localStorage.getItem('whatsapp_extract_theme') || 'light';
+        
+        if (savedTheme === 'dark') {
+            darkTheme.checked = true;
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else if (savedTheme === 'system') {
+            systemTheme.checked = true;
+            
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+            
+            // Listen for system theme changes
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+                if (systemTheme.checked) {
+                    document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+                }
+            });
+        } else {
+            lightTheme.checked = true;
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    }
+    
+    // Initialize theme
+    initTheme();
+    
+    // Add theme switcher handlers
+    if (lightTheme) {
+        lightTheme.addEventListener('change', () => {
+            if (lightTheme.checked) {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('whatsapp_extract_theme', 'light');
+            }
+        });
+    }
+    
+    if (darkTheme) {
+        darkTheme.addEventListener('change', () => {
+            if (darkTheme.checked) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('whatsapp_extract_theme', 'dark');
+            }
+        });
+    }
+    
+    if (systemTheme) {
+        systemTheme.addEventListener('change', () => {
+            if (systemTheme.checked) {
+                localStorage.setItem('whatsapp_extract_theme', 'system');
+                
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+            }
+        });
+    }
+    
+    // Show toast notification
+    function showToast(title, message, type = 'info', duration = 3000) {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}-toast`;
+        toast.innerHTML = `
+            <div class="toast-header">
+                <strong>${title}</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        `;
+        
+        if (toastContainer) {
+            toastContainer.appendChild(toast);
+            
+            // Use Bootstrap toast
+            const bsToast = new bootstrap.Toast(toast, {
+                delay: duration
+            });
+            bsToast.show();
+            
+            // Auto-remove after it's hidden
+            toast.addEventListener('hidden.bs.toast', () => {
+                toast.remove();
+            });
+        }
+    }
+    
+    // Show processing overlay
+    function showProcessingOverlay(show = true) {
+        if (processingOverlay) {
+            if (show) {
+                processingOverlay.classList.add('visible');
+            } else {
+                processingOverlay.classList.remove('visible');
+            }
+        }
+    }
+    
+    // Toggle functionality for floating action button
+    if (fabMain) {
+        fabMain.addEventListener('click', (e) => {
+            if (e.target.closest('.fab-option-btn')) return;
+            fabMain.classList.toggle('open');
+        });
+        
+        // Close FAB when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.floating-action-btn') && fabMain.classList.contains('open')) {
+                fabMain.classList.remove('open');
+            }
+        });
+    }
+    
+    // Open upload modal from FAB or button
+    function openUploadModal() {
+        if (uploadModal) {
+            const modal = new bootstrap.Modal(uploadModal);
+            modal.show();
+            
+            // Check if API key is set
+            const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
+            if (!apiKey && apiKeyWarning) {
+                apiKeyWarning.style.display = 'block';
+            } else if (apiKeyWarning) {
+                apiKeyWarning.style.display = 'none';
+            }
+        }
+        
+        // Close FAB if open
+        if (fabMain && fabMain.classList.contains('open')) {
+            fabMain.classList.remove('open');
+        }
+    }
+    
+    // Handle upload button clicks
+    if (uploadBtn) uploadBtn.addEventListener('click', openUploadModal);
+    if (fabUpload) fabUpload.addEventListener('click', openUploadModal);
+    
+    // Handle mobile upload button
+    if (mobileUploadBtn) {
+        mobileUploadBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            openUploadModal();
+        });
+    }
+    
+    // Set API key from modal warning
+    if (setApiKeyFromModal) {
+        setApiKeyFromModal.addEventListener('click', () => {
+            // Close upload modal
+            const uploadModalInstance = bootstrap.Modal.getInstance(uploadModal);
+            if (uploadModalInstance) uploadModalInstance.hide();
+            
+            // Open settings panel
+            openSettingsPanel();
+        });
+    }
+    
+    // Open settings panel
+    function openSettingsPanel() {
+        if (settingsPanel) {
+            settingsPanel.classList.add('open');
+            
+            // Focus on API key input
+            if (apiKeyInput) {
+                setTimeout(() => {
+                    apiKeyInput.focus();
+                }, 300);
+            }
+        }
+        
+        // Close FAB if open
+        if (fabMain && fabMain.classList.contains('open')) {
+            fabMain.classList.remove('open');
+        }
+        
+        // Close mobile menu if open
+        if (mobileSlideMenu && mobileSlideMenu.classList.contains('open')) {
+            mobileSlideMenu.classList.remove('open');
+        }
+    }
+    
+    // Setup settings panel buttons
+    if (btnShowSettings) btnShowSettings.addEventListener('click', openSettingsPanel);
+    if (closeSettingsPanel) {
+        closeSettingsPanel.addEventListener('click', () => {
+            if (settingsPanel) settingsPanel.classList.remove('open');
+        });
+    }
+    if (fabApiKey) fabApiKey.addEventListener('click', openSettingsPanel);
+    if (mobileApiKeyBtn) {
+        mobileApiKeyBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            openSettingsPanel();
+        });
+    }
+    
+    // Open info panel
+    function openInfoPanel() {
+        if (infoPanel) {
+            infoPanel.classList.add('open');
+        }
+        
+        // Close FAB if open
+        if (fabMain && fabMain.classList.contains('open')) {
+            fabMain.classList.remove('open');
+        }
+        
+        // Close mobile menu if open
+        if (mobileSlideMenu && mobileSlideMenu.classList.contains('open')) {
+            mobileSlideMenu.classList.remove('open');
+        }
+    }
+    
+    // Setup info panel buttons
+    if (btnShowInfo) btnShowInfo.addEventListener('click', openInfoPanel);
+    if (closeInfoPanel) {
+        closeInfoPanel.addEventListener('click', () => {
+            if (infoPanel) infoPanel.classList.remove('open');
+        });
+    }
+    if (fabInfo) fabInfo.addEventListener('click', openInfoPanel);
+    if (mobileInfoBtn) {
+        mobileInfoBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            openInfoPanel();
+        });
+    }
+    
+    // Mobile menu handling
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.add('open');
+        });
+    }
+    
+    if (closeSlideMenu) {
+        closeSlideMenu.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+        });
+    }
+    
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (mobileSlideMenu && mobileSlideMenu.classList.contains('open') &&
+            !e.target.closest('.mobile-slide-menu') && !e.target.closest('#mobileMenuBtn')) {
+            mobileSlideMenu.classList.remove('open');
+        }
+    });
+    
+    // Mobile view buttons
+    if (mobileWhatsappViewBtn) {
+        mobileWhatsappViewBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            if (whatsappViewSection) whatsappViewSection.style.display = 'block';
+            if (rawTextSection) rawTextSection.style.display = 'none';
+        });
+    }
+    
+    if (mobileRawTextBtn) {
+        mobileRawTextBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            if (whatsappViewSection) whatsappViewSection.style.display = 'none';
+            if (rawTextSection) rawTextSection.style.display = 'block';
+        });
+    }
+    
+    // Mobile download buttons
+    if (mobileDownloadTextBtn) {
+        mobileDownloadTextBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            downloadAsText();
+        });
+    }
+    
+    if (mobileDownloadPdfBtn) {
+        mobileDownloadPdfBtn.addEventListener('click', () => {
+            if (mobileSlideMenu) mobileSlideMenu.classList.remove('open');
+            downloadAsPdf();
+        });
+    }
+    
+    // Enhanced lightbox with download functionality
+    function showMediaInLightbox(mediaUrl, caption, isVideo = false) {
+        const lightbox = document.getElementById('whatsapp-lightbox');
+        const lightboxImage = document.querySelector('.lightbox-image');
+        const lightboxVideo = document.querySelector('.lightbox-video');
+        const lightboxCaption = document.querySelector('.lightbox-caption');
+        const lightboxTitle = document.querySelector('.lightbox-title');
+        
+        if (isVideo) {
+            lightboxVideo.src = mediaUrl;
+            lightboxVideo.style.display = 'block';
+            lightboxImage.style.display = 'none';
+            lightboxTitle.textContent = 'Video';
+        } else {
+            lightboxImage.src = mediaUrl;
+            lightboxImage.style.display = 'block';
+            lightboxVideo.style.display = 'none';
+            lightboxTitle.textContent = 'Image';
+        }
+        
+        // Store current media for download
+        currentMediaFile = {
+            url: mediaUrl,
+            name: caption || (isVideo ? 'video.mp4' : 'image.jpg')
+        };
+        
+        lightboxCaption.textContent = caption || '';
+        lightbox.style.display = 'flex';
+    }
+    
+    // Lightbox download button
+    if (lightboxDownload) {
+        lightboxDownload.addEventListener('click', () => {
+            if (currentMediaFile) {
+                const a = document.createElement('a');
+                a.href = currentMediaFile.url;
+                a.download = currentMediaFile.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
+    }
+    
+    // Update progress function with overlay support
+    function updateProgress(percent, message) {
+        if (progressBar) {
+            progressBar.style.width = `${percent}%`;
+        }
+        if (statusText) {
+            statusText.textContent = message;
+        }
+        
+        // Show the processing overlay when progress is happening
+        if (percent > 0 && percent < 100) {
+            showProcessingOverlay(true);
+        } else if (percent >= 100) {
+            // Hide when complete
+            setTimeout(() => {
+                showProcessingOverlay(false);
+            }, 1000); // slight delay for UX
+        }
+    }
+    
+    // Switch to empty state or chat view based on content
+    function toggleViewState(hasContent) {
+        if (emptyState && chatBody) {
+            if (hasContent) {
+                emptyState.style.display = 'none';
+                chatBody.style.display = 'flex';
+            } else {
+                emptyState.style.display = 'flex';
+                chatBody.style.display = 'none';
+            }
+        }
+    }
+    
+    // Initialize view state
+    toggleViewState(false);
 
+    // --- Keep all existing processing code below ---
     // Load saved API key if exists
     function loadSavedApiKey() {
         const savedApiKey = localStorage.getItem('whatsapp_extract_api_key');
@@ -36,9 +439,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveApiKey(apiKey) {
         if (apiKey) {
             localStorage.setItem('whatsapp_extract_api_key', apiKey);
-            alert('API key saved successfully!');
+            showToast('Success', 'API key saved successfully!', 'success');
         } else {
-            alert('Please enter an API key to save.');
+            showToast('Error', 'Please enter an API key to save.', 'error');
         }
     }
 
@@ -50,6 +453,11 @@ document.addEventListener('DOMContentLoaded', () => {
         saveApiKeyBtn.addEventListener('click', () => {
             const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
             saveApiKey(apiKey);
+            
+            // Close the settings panel after saving
+            if (settingsPanel) {
+                settingsPanel.classList.remove('open');
+            }
         });
     }
 
@@ -602,30 +1010,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Process button click handler
+    // Process button click handler - modified to work with new UI
     if (processButton) {
         processButton.addEventListener('click', async () => {
             if (!zipFileInput || !zipFileInput.files[0]) {
-                alert('Please select a ZIP file first.');
+                showToast('Error', 'Please select a ZIP file first.', 'error');
                 return;
             }
 
             const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
             if (!apiKey) {
-                alert('Please enter your OpenAI API key for transcription.');
-                return;
+                showToast('Warning', 'API key not set. Audio files will not be transcribed.', 'warning');
+                // Continue anyway - user might just want to extract chat without transcription
             }
 
             // Auto-save API key when processing starts
-            saveApiKey(apiKey);
+            if (apiKey) {
+                saveApiKey(apiKey);
+            }
+            
+            // Close the upload modal
+            const uploadModalInstance = bootstrap.Modal.getInstance(uploadModal);
+            if (uploadModalInstance) uploadModalInstance.hide();
 
             try {
                 console.log('Starting processing of ZIP file:', zipFileInput.files[0].name);
-                // Show progress section
-                if (progressSection) {
-                    progressSection.style.display = 'block';
-                }
-
+                
+                // Show processing overlay
+                showProcessingOverlay(true);
                 updateProgress(0, 'Reading ZIP file...');
 
                 // Read the ZIP file
@@ -810,21 +1222,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 renderWhatsAppView(structuredData);
 
-                // Show the view options and WhatsApp view
-                if (viewOptions) {
-                    viewOptions.style.display = 'block';
-                }
+                // Show the view options and WhatsApp view - FIX HERE
+                // Before:
+                // if (viewOptions) {
+                //     viewOptions.style.display = 'block';
+                // }
+                
+                // After - simply display the WhatsApp view section and hide raw text section:
                 if (whatsappViewSection) {
                     whatsappViewSection.style.display = 'block';
                 }
                 if (rawTextSection) {
                     rawTextSection.style.display = 'none';
                 }
+                
                 updateProgress(100, 'Processing complete!');
                 console.log('Processing complete!');
+                
+                // Switch to chat view
+                toggleViewState(true);
+                showProcessingOverlay(false);
+                showToast('Success', 'Processing complete!', 'success');
             } catch (error) {
                 console.error('Error processing ZIP file:', error);
                 updateProgress(0, `Error: ${error.message}`);
+                showProcessingOverlay(false);
+                showToast('Error', error.message, 'error');
             }
         });
     }
@@ -845,6 +1268,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <img class="lightbox-image" src="">
                 <video class="lightbox-video" controls style="display:none;"></video>
                 <div class="lightbox-caption"></div>
+                <div class="lightbox-footer">
+                    <button id="lightboxDownload" class="btn btn-primary">Download</button>
+                </div>
             </div>
         `;
         
@@ -982,16 +1408,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const lightboxImage = document.querySelector('.lightbox-image');
         const lightboxVideo = document.querySelector('.lightbox-video');
         const lightboxCaption = document.querySelector('.lightbox-caption');
+        const lightboxTitle = document.querySelector('.lightbox-title');
         
         if (isVideo) {
             lightboxVideo.src = mediaUrl;
             lightboxVideo.style.display = 'block';
             lightboxImage.style.display = 'none';
+            lightboxTitle.textContent = 'Video';
         } else {
             lightboxImage.src = mediaUrl;
             lightboxImage.style.display = 'block';
             lightboxVideo.style.display = 'none';
+            lightboxTitle.textContent = 'Image';
         }
+        
+        // Store current media for download
+        currentMediaFile = {
+            url: mediaUrl,
+            name: caption || (isVideo ? 'video.mp4' : 'image.jpg')
+        };
         
         lightboxCaption.textContent = caption || '';
         lightbox.style.display = 'flex';
@@ -1786,4 +2221,41 @@ document.addEventListener('DOMContentLoaded', () => {
         // Default format
         return 'unknown';
     }
+
+    // Add event listeners for tab buttons
+    if (whatsappViewBtn) {
+        whatsappViewBtn.addEventListener('click', () => {
+            // Update active class
+            whatsappViewBtn.classList.add('active');
+            rawTextBtn.classList.remove('active');
+            
+            // Show/hide sections
+            if (whatsappViewSection) whatsappViewSection.style.display = 'block';
+            if (rawTextSection) rawTextSection.style.display = 'none';
+        });
+    }
+    
+    if (rawTextBtn) {
+        rawTextBtn.addEventListener('click', () => {
+            // Update active class
+            rawTextBtn.classList.add('active');
+            whatsappViewBtn.classList.remove('active');
+            
+            // Show/hide sections
+            if (whatsappViewSection) whatsappViewSection.style.display = 'none';
+            if (rawTextSection) rawTextSection.style.display = 'block';
+        });
+    }
+    
+    // Enable Bootstrap Collapse for info section
+    const infoSections = document.querySelectorAll('.wa-section-title[data-bs-toggle="collapse"]');
+    infoSections.forEach(section => {
+        section.addEventListener('click', () => {
+            const icon = section.querySelector('.fa-chevron-down');
+            if (icon) {
+                icon.classList.toggle('fa-chevron-down');
+                icon.classList.toggle('fa-chevron-up');
+            }
+        });
+    });
 });
