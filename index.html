@@ -17,8 +17,14 @@
     <div class="wa-sidebar d-none d-lg-flex">
         <div class="wa-sidebar-header">
             <div class="profile-section">
-                <div class="sidebar-profile-img">
+                <div class="sidebar-profile-img" id="profileDropdownTrigger">
                     <i class="fas fa-user"></i>
+                </div>
+                <div class="profile-dropdown" id="profileDropdown">
+                    <div class="profile-dropdown-title">Select Chat Owner</div>
+                    <div id="profileDropdownItems" class="profile-dropdown-items">
+                        <!-- Items will be populated dynamically -->
+                    </div>
                 </div>
             </div>
             <div class="sidebar-actions">

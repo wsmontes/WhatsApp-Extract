@@ -37,7 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
             showProcessingOverlay, 
             updateProgress, 
             toggleViewState,
-            createLightbox
+            createLightbox,
+            fixMessageTextWrapping  // Make sure it's imported here
         } = uiModule;
         
         // Destructure renderer module functions
@@ -122,14 +123,18 @@ document.addEventListener('DOMContentLoaded', () => {
             whatsappViewBtn.addEventListener('click', () => {
                 toggleView(true);
                 
-                // Instead of forcing background with inline styles,
-                // use classes that respect theme variables
+                // Reset any inline styles that might be causing issues
                 if (whatsappContainer) {
-                    // Remove any inline styles that might override theme
-                    whatsappContainer.style.cssText = '';
+                    // Remove all inline styles first
+                    whatsappContainer.removeAttribute('style');
                     
-                    // Add a class to style via CSS
+                    // Add our theme-aware background class
                     whatsappContainer.classList.add('themed-chat-background');
+                    
+                    // Force the proper background if needed
+                    whatsappContainer.style.backgroundColor = 'var(--wa-chat-bg)';
+                    whatsappContainer.style.backgroundImage = 'url(\'data:image/png;base64,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\')';
+                    whatsappContainer.style.backgroundRepeat = 'repeat';
                 }
             });
         }
@@ -491,9 +496,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     chatLines = parseChatText(chatText);
                     console.log(`Parsed ${chatLines.length} chat lines`);
-                    updateProgress(20, 'Identifying audio files...');
+                    updateProgress(20, 'Identifying media files...');
                     
-                    // Find audio files in the ZIP
+                    // Find all media files in the ZIP
                     audioFiles = [];
                     mediaFiles = {}; // Reset media files object
                     let mediaStats = {
@@ -565,69 +570,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     
                     console.log('Media stats:', mediaStats);
-                    updateProgress(30, `Found ${audioFiles.length} audio files.`);
                     
-                    // Process audio files
-                    if (audioFiles.length > 0 && apiKey) {
-                        console.log('Beginning audio processing...');
-                        // Create audio context for analysis
-                        const AudioContext = window.AudioContext || window.webkitAudioContext;
-                        const audioContext = new AudioContext();
-                        
-                        let count = 0;
-                        for (const audioFile of audioFiles) {
-                            count++;
-                            console.log(`\n==== PROCESSING AUDIO FILE ${count}/${audioFiles.length} ====`);
-                            console.log(`File name: ${audioFile.name}`);
-                            
-                            updateProgress(
-                                30 + (50 * count / audioFiles.length),
-                                `Analyzing audio files (${count}/${audioFiles.length})...`
-                            );
-                            if (currentFile) {
-                                currentFile.textContent = `Processing: ${audioFile.name}`;
-                            }
-                            
-                            try {
-                                // Get audio data as ArrayBuffer
-                                const audioData = await audioFile.file.async('arraybuffer');
-                                console.log(`Audio file ${audioFile.name} loaded, size: ${audioData.byteLength} bytes`);
-                                
-                                // Transcribe the audio using OpenAI's Whisper API
-                                const transcript = await transcribeAudio(audioData, audioContext, apiKey, audioFile.name);
-                                console.log(`Transcription result for ${audioFile.name}:`, transcript);
-                                
-                                console.log(`ADDING TRANSCRIPT MAPPING: ${audioFile.name} -> ${transcript}`);
-                                transcriptions[audioFile.name] = transcript;
-                            } catch (error) {
-                                console.error(`Failed to transcribe ${audioFile.name}:`, error);
-                                transcriptions[audioFile.name] = `[Audio transcription failed: ${error.message}]`;
-                            }
-                        }
-                        
-                        console.log("\n==== ALL TRANSCRIPTIONS GENERATED ====");
-                        for (const fileName in transcriptions) {
-                            console.log(`${fileName}: ${transcriptions[fileName]}`);
-                        }
-                    }
+                    // IMMEDIATE DISPLAY: Generate initial chat view without audio transcriptions
+                    updateProgress(40, `Rendering chat with ${chatLines.length} messages...`);
                     
-                    // Update to display both raw text and WhatsApp-style view
-                    updateProgress(90, 'Merging transcriptions with chat...');
-                    console.log('Beginning merge of chat and transcriptions');
-                    console.log('Number of transcriptions:', Object.keys(transcriptions).length);
+                    // Create placeholder transcriptions for audio files
+                    let initialTranscriptions = {};
+                    audioFiles.forEach(audioFile => {
+                        initialTranscriptions[audioFile.name] = "[Audio transcription in progress...]";
+                    });
                     
                     // Get both raw text and structured data for the UI
-                    const { rawText, structuredData } = mergeChatWithTranscriptions(chatLines, transcriptions);
+                    const { rawText, structuredData } = mergeChatWithTranscriptions(chatLines, initialTranscriptions);
                     processedText = rawText;
-                    console.log('Processing complete!');
+                    console.log('Initial processing complete!');
                     
                     // Add media files to structured data
                     structuredData.mediaFiles = mediaFiles;
+                    structuredData.isProcessingAudio = audioFiles.length > 0 && apiKey;
                     
                     // Display the results
                     if (resultContainer) {
                         resultContainer.textContent = processedText;
                     }
+                    
+                    // Store initial data for updates
+                    window.initialChatData = structuredData;
                     
                     // Render the WhatsApp view and add to sidebar
                     renderWhatsAppView(structuredData);
@@ -636,18 +604,198 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Show the WhatsApp view by default
                     toggleView(true);
                     
-                    updateProgress(100, 'Processing complete!');
-                    console.log('Processing complete!');
+                    updateProgress(60, 'Chat content loaded!');
                     
                     // Switch to chat view
                     toggleViewState(true);
                     showProcessingOverlay(false);
-                    showToast('Success', 'Processing complete!', 'success');
+                    
+                    // Show audio processing notice if needed
+                    if (audioFiles.length > 0 && apiKey) {
+                        // Create audio processing indicator
+                        showBackgroundProcessingIndicator(true, audioFiles.length);
+                        
+                        // BACKGROUND PROCESSING: Process audio files in the background
+                        processAudioFilesInBackground(audioFiles, apiKey, structuredData);
+                    } else {
+                        showToast('Success', 'Processing complete!', 'success');
+                    }
+                    
                 } catch (error) {
                     console.error('Error processing ZIP file:', error);
                     updateProgress(0, `Error: ${error.message}`);
                     showProcessingOverlay(false);
                     showToast('Error', error.message, 'error');
+                }
+            });
+        }
+        
+        // New function to process audio files in the background
+        async function processAudioFilesInBackground(audioFiles, apiKey, initialData) {
+            try {
+                // Create audio context for analysis
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                const audioContext = new AudioContext();
+                
+                console.log('Beginning background audio processing...');
+                
+                // Track real transcriptions
+                let transcriptions = {};
+                let completedFiles = 0;
+                const totalFiles = audioFiles.length;
+                
+                // Process each audio file
+                for (const audioFile of audioFiles) {
+                    try {
+                        // Update background processing status
+                        updateBackgroundProcessingStatus(++completedFiles, totalFiles);
+                        
+                        // Get audio data as ArrayBuffer
+                        const audioData = await audioFile.file.async('arraybuffer');
+                        console.log(`Processing audio file ${audioFile.name, size: ${audioData.byteLength} bytes`);
+                        
+                        // Transcribe the audio using OpenAI's Whisper API
+                        const transcript = await transcribeAudio(audioData, audioContext, apiKey, audioFile.name);
+                        console.log(`Transcription result for ${audioFile.name}:`, transcript);
+                        
+                        transcriptions[audioFile.name] = transcript;
+                        
+                        // Update the chat view with new transcription
+                        if (Object.keys(transcriptions).length % 3 === 0 || completedFiles === totalFiles) {
+                            updateChatWithTranscriptions(transcriptions, initialData);
+                        }
+                    } catch (error) {
+                        console.error(`Failed to transcribe ${audioFile.name}:`, error);
+                        transcriptions[audioFile.name] = `[Audio transcription failed: ${error.message}]`;
+                        
+                        // Update the UI with the error
+                        updateChatWithTranscriptions(transcriptions, initialData);
+                    }
+                }
+                
+                // Final update
+                showBackgroundProcessingIndicator(false);
+                showToast('Success', 'Audio transcription complete!', 'success');
+                
+                console.log('All audio transcriptions completed');
+            } catch (error) {
+                console.error('Error processing audio files in background:', error);
+                showToast('Error', `Audio processing error: ${error.message}`, 'error');
+                showBackgroundProcessingIndicator(false);
+            }
+        }
+        
+        // Show background processing indicator
+        function showBackgroundProcessingIndicator(show, totalFiles = 0) {
+            // Remove existing indicator if any
+            const existingIndicator = document.getElementById('backgroundProcessingIndicator');
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+            
+            if (show) {
+                // Create a floating background processing indicator
+                const indicator = document.createElement('div');
+                indicator.id = 'backgroundProcessingIndicator';
+                indicator.className = 'background-processing-indicator';
+                indicator.innerHTML = `
+                    <div class="processing-icon">
+                        <div class="mini-spinner"></div>
+                    </div>
+                    <div class="processing-text">
+                        <div>Processing audio files in background</div>
+                        <div class="progress progress-sm mt-1">
+                            <div id="backgroundProgressBar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                        <div id="backgroundProgressText">0/${totalFiles} files completed</div>
+                    </div>
+                    <button class="dismiss-btn" onclick="this.parentNode.classList.add('minimized')">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                `;
+                document.body.appendChild(indicator);
+                
+                // Add minimize/maximize toggle
+                indicator.querySelector('.dismiss-btn').addEventListener('click', (e) => {
+                    if (indicator.classList.contains('minimized')) {
+                        indicator.classList.remove('minimized');
+                        e.currentTarget.innerHTML = '<i class="fas fa-minus"></i>';
+                    } else {
+                        indicator.classList.add('minimized');
+                        e.currentTarget.innerHTML = '<i class="fas fa-plus"></i>';
+                    }
+                });
+            }
+        }
+        
+        // Update background processing status
+        function updateBackgroundProcessingStatus(completed, total) {
+            const progressBar = document.getElementById('backgroundProgressBar');
+            const progressText = document.getElementById('backgroundProgressText');
+            
+            if (progressBar && progressText) {
+                const percentComplete = Math.floor((completed / total) * 100);
+                progressBar.style.width = `${percentComplete}%`;
+                progressText.textContent = `${completed}/${total} files completed`;
+            }
+        }
+        
+        // Update chat with new transcriptions
+        function updateChatWithTranscriptions(newTranscriptions, initialData) {
+            // Create a copy of the initial data
+            const updatedData = JSON.parse(JSON.stringify(initialData));
+            
+            // Update messages with new transcriptions
+            updatedData.messages = updatedData.messages.map(msg => {
+                if (msg.type === 'audio' && msg.fileName && newTranscriptions[msg.fileName]) {
+                    return {
+                        ...msg,
+                        content: newTranscriptions[msg.fileName]
+                    };
+                }
+                return msg;
+            });
+            
+            // Regenerate raw text
+            const { rawText } = mergeChatWithTranscriptions(chatLines, newTranscriptions);
+            processedText = rawText;
+            
+            // Update raw text view
+            if (resultContainer) {
+                resultContainer.textContent = processedText;
+            }
+            
+            // Update WhatsApp view - only refresh audio messages to avoid disruption
+            updateWhatsAppViewAudioMessages(updatedData);
+        }
+        
+        // Update only audio messages in WhatsApp view
+        function updateWhatsAppViewAudioMessages(updatedData) {
+            const messagesContainer = document.getElementById('messagesContainer');
+            if (!messagesContainer) return;
+            
+            // Find all audio message elements
+            const audioMessages = messagesContainer.querySelectorAll('.message.audio-transcript');
+            
+            audioMessages.forEach(msgEl => {
+                // Get filename from element's data attribute
+                const fileName = msgEl.getAttribute('data-filename');
+                if (!fileName) return;
+                
+                // Find updated message data
+                const messageData = updatedData.messages.find(m => m.type === 'audio' && m.fileName === fileName);
+                if (!messageData) return;
+                
+                // Update transcript text
+                const transcriptEl = msgEl.querySelector('.audio-transcript-text');
+                if (transcriptEl && messageData.content) {
+                    transcriptEl.innerHTML = formatAudioTranscription(messageData.content);
+                    
+                    // If this was a "processing" placeholder, update styling
+                    if (transcriptEl.textContent.includes('transcription in progress')) {
+                        msgEl.classList.add('transcript-updated');
+                        setTimeout(() => msgEl.classList.remove('transcript-updated'), 2000);
+                    }
                 }
             });
         }
@@ -663,6 +811,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
+        
+        // Initialize profile dropdown
+        const profileDropdownTrigger = document.getElementById('profileDropdownTrigger');
+        const profileDropdown = document.getElementById('profileDropdown');
+        
+        if (profileDropdownTrigger && profileDropdown) {
+            console.log('Setting up profile dropdown toggle');
+            
+            // Remove any existing handler and add a fresh one
+            const newTrigger = profileDropdownTrigger.cloneNode(true);
+            profileDropdownTrigger.parentNode.replaceChild(newTrigger, profileDropdownTrigger);
+            
+            newTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                console.log('Profile icon clicked');
+                profileDropdown.classList.toggle('show');
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#profileDropdownTrigger') && 
+                    !e.target.closest('#profileDropdown')) {
+                    profileDropdown.classList.remove('show');
+                }
+            });
+        }
     }).catch(err => {
         console.error('Error loading modules:', err);
         document.getElementById('processingOverlay').textContent = 

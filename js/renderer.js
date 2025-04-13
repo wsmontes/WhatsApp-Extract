@@ -33,40 +33,32 @@ export function renderWhatsAppView(data) {
     }
     
     // Update chat header avatar based on chat type
-    const chatAvatar = document.querySelector('.wa-chat-avatar');
-    if (chatAvatar) {
-        // Clear existing content
-        chatAvatar.innerHTML = '';
-        
-        if (isGroup) {
-            // Group chat avatar
-            chatAvatar.style.backgroundColor = '#00a884';
-            const groupIcon = document.createElement('i');
-            groupIcon.className = 'fas fa-users';
-            chatAvatar.appendChild(groupIcon);
-        } else {
-            // Individual chat avatar
-            chatAvatar.style.backgroundColor = '#128c7e';
-            const initialSpan = document.createElement('span');
-            initialSpan.textContent = (data.title || 'User').charAt(0).toUpperCase();
-            chatAvatar.appendChild(initialSpan);
-        }
-    }
+    updateChatAvatar(data);
+    
+    // Update profile dropdown with participants
+    populateProfileDropdown(data);
 
     // Get container for messages and ensure proper background
     const messagesContainer = document.getElementById('messagesContainer');
     messagesContainer.innerHTML = '';
     
-    // Instead of forcing inline styles that override theme settings,
-    // let's use classes and rely on CSS variables for theming
+    // Clear any inline styles that may be causing the black background
+    messagesContainer.removeAttribute('style');
+    messagesContainer.style.backgroundColor = 'transparent';
+    
+    // Properly set up the WhatsApp container background
     const whatsappContainer = document.getElementById('whatsappContainer');
     if (whatsappContainer) {
-        // Remove any inline background styles that might override theme settings
-        whatsappContainer.style.removeProperty('background-color');
-        whatsappContainer.style.removeProperty('background-image');
+        // Remove any problematic inline styles
+        whatsappContainer.removeAttribute('style');
         
-        // Add a class instead to style via CSS
+        // Apply our theme-aware background class
         whatsappContainer.classList.add('themed-chat-background');
+        
+        // Explicitly set important background properties
+        whatsappContainer.style.backgroundColor = 'var(--wa-chat-bg)';
+        whatsappContainer.style.backgroundImage = 'url(\'data:image/png;base64,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\')';
+        whatsappContainer.style.backgroundRepeat = 'repeat';
     }
 
     // Also make sure messaging container is properly styled
@@ -163,6 +155,16 @@ export function renderWhatsAppView(data) {
                         </div>
                     </div>
                 `;
+                
+                // Store filename as data attribute for update purposes
+                if (msg.fileName) {
+                    messageEl.setAttribute('data-filename', msg.fileName);
+                }
+                
+                // Add special class if this is a placeholder for in-progress transcription
+                if (msg.content && msg.content.includes('transcription in progress')) {
+                    messageEl.classList.add('processing-transcript');
+                }
                 break;
 
             case 'photo':
@@ -286,6 +288,112 @@ export function renderWhatsAppView(data) {
 
     // Scroll to the bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+/**
+ * Populate profile dropdown with participants
+ * @param {Object} data - Chat data
+ */
+function populateProfileDropdown(data) {
+    const dropdown = document.getElementById('profileDropdownItems');
+    if (!dropdown) return;
+    
+    // Clear existing items
+    dropdown.innerHTML = '';
+    
+    // Add all participants as options
+    data.participants.forEach(participant => {
+        const item = document.createElement('div');
+        item.className = `profile-dropdown-item ${participant === data.userPhoneNumber ? 'active' : ''}`;
+        item.dataset.participant = participant;
+        
+        item.innerHTML = `
+            <span class="check-icon"><i class="fas fa-check"></i></span>
+            <span class="participant-name">${participant}</span>
+        `;
+        
+        // Add click handler
+        item.addEventListener('click', () => {
+            // Update active state in dropdown
+            document.querySelectorAll('.profile-dropdown-item').forEach(el => {
+                el.classList.remove('active');
+            });
+            item.classList.add('active');
+            
+            // Update the chat data
+            if (window.lastProcessedChatData) {
+                window.lastProcessedChatData.userPhoneNumber = participant;
+                
+                // Re-render the chat with the new owner
+                renderWhatsAppView(window.lastProcessedChatData);
+                
+                // Close the dropdown
+                document.getElementById('profileDropdown').classList.remove('show');
+            }
+        });
+        
+        dropdown.appendChild(item);
+    });
+    
+    // Set up dropdown toggle
+    setupProfileDropdownToggle();
+}
+
+/**
+ * Set up profile dropdown toggle functionality
+ */
+function setupProfileDropdownToggle() {
+    const trigger = document.getElementById('profileDropdownTrigger');
+    const dropdownEl = document.getElementById('profileDropdown');
+    
+    if (trigger && dropdownEl) {
+        // Remove existing listeners to avoid duplicates
+        const newTrigger = trigger.cloneNode(true);
+        trigger.parentNode.replaceChild(newTrigger, trigger);
+        
+        // Add click handler to toggle dropdown
+        newTrigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            console.log('Profile dropdown trigger clicked');
+            dropdownEl.classList.toggle('show');
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#profileDropdownTrigger') && 
+                !e.target.closest('#profileDropdown')) {
+                dropdownEl.classList.remove('show');
+            }
+        });
+    }
+}
+
+/**
+ * Update chat avatar with relevant icon and image
+ * @param {Object} data - Chat data
+ */
+function updateChatAvatar(data) {
+    const chatAvatar = document.querySelector('.wa-chat-avatar');
+    if (!chatAvatar) return;
+    
+    // Clear existing content
+    chatAvatar.innerHTML = '';
+    
+    // Set appropriate avatar based on chat type
+    const isGroup = data.chatType === 'group';
+    if (isGroup) {
+        // Group chat avatar
+        chatAvatar.style.backgroundColor = '#00a884';
+        const groupIcon = document.createElement('i');
+        groupIcon.className = 'fas fa-users';
+        chatAvatar.appendChild(groupIcon);
+    } else {
+        // Individual chat avatar
+        chatAvatar.style.backgroundColor = '#128c7e';
+        const initialSpan = document.createElement('span');
+        initialSpan.textContent = (data.title || 'User').charAt(0).toUpperCase();
+        chatAvatar.appendChild(initialSpan);
+    }
 }
 
 /**
@@ -458,6 +566,11 @@ function formatMessageText(text) {
  */
 function formatAudioTranscription(text) {
     if (!text) return '';
+
+    // Handle processing placeholder with special styling
+    if (text.includes('[Audio transcription in progress...]')) {
+        return '<div class="transcript-placeholder"><i class="fas fa-spinner fa-spin me-2"></i>Transcribing audio...</div>';
+    }
 
     // Remove any "[Audio content]" or similar prefixes
     text = text.replace(/\[Audio .*?\]:\s*/g, '');
